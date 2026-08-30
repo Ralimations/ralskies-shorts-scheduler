@@ -1,0 +1,11 @@
+{
+  "expectedChannelTitle": "Ralskies",
+  "expectedChannelId": "UCIt8eA8uvrDVbpta0pgIc5Q",
+  "timezone": "Asia/Manila",
+  "oauthClientPath": "phase2/secrets/client_secret.json",
+  "oauthTokenPath": "phase2/secrets/token.json",
+  "testBatchPath": "phase2/test_batch.json",
+  "statePath": "outputs/ralskies-content-engine/phase2_upload_state.json",
+  "trackerPath": "outputs/ralskies-content-engine/Ralskies_Upload_Tracker_Phase2.xlsx"
+}
+

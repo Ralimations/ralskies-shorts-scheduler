@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Generated analysis and application output
+/.analysis_thumbs/
+/outputs/
+
+# Machine-local Phase 2 configuration
+/phase2/config.json
+
+# YouTube OAuth credentials and tokens
+phase2/secrets/
+**/client_secret*.json
+**/client_secrets*.json
+**/oauth_token*.json
+**/token.json
+.env
+.env.*
+
+# Local transient upload sessions
+phase2/runtime/
+
+# Logs, editor swap files, and OS metadata
+*.log
+*.swp
+.DS_Store
+Thumbs.db

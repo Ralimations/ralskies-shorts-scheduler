@@ -1,0 +1,30 @@
+{
+  "mode": "PRIVATE_TEST_ONLY",
+  "approvedAt": "2026-08-30",
+  "items": [
+    {
+      "shortId": "RS-393176E70BE5",
+      "localPath": "G:/RS_BULK/BULK_01_2026-08-31_to_2026-09-06/393176e70be51bcfa01bb8c65e932e844fbfc2bd6282c4c2c40671aebf2fda15.mp4",
+      "sha256": "393176E70BE51BCFA01BB8C65E932E844FBFC2BD6282C4C2C40671AEBF2FDA15",
+      "title": "Lost Stars — Adam Levine / Begin Again cover #LostStars #AdamLevine #Cover",
+      "description": "A performance moment from my cover of “Lost Stars.”\n\nFull performance on the Ralskies channel.\n\n#LostStars #AdamLevine #Cover",
+      "hashtags": ["#LostStars", "#AdamLevine", "#Cover"],
+      "tags": ["Lost Stars", "Adam Levine", "Begin Again", "Lost Stars cover", "male cover", "Ralskies", "Ralskies cover", "singing cover"],
+      "categoryId": "10",
+      "relatedVideoId": "lxB2fqxI_eM",
+      "duplicateDisposition": "CLEARED BY CLIP-LEVEL AUDIT"
+    },
+    {
+      "shortId": "RS-608E378DD3EF",
+      "localPath": "G:/RS_BULK/BULK_01_2026-08-31_to_2026-09-06/608e378dd3efdf74c41cff55d851bf354dfc877da8988205ee798e72c8cbe7f3.mp4",
+      "sha256": "608E378DD3EFDF74C41CFF55D851BF354DFC877DA8988205EE798E72C8CBE7F3",
+      "title": "the line in Gravity that quietly wrecks me #Gravity #HazbinHotel #Cover",
+      "description": "One section of “Gravity” I wanted to let breathe.\n\nThe full cover is available on my channel.\n\n#Gravity #HazbinHotel #Cover",
+      "hashtags": ["#Gravity", "#HazbinHotel", "#Cover"],
+      "tags": ["Gravity", "Hazbin Hotel", "Gravity cover", "Hazbin Hotel cover", "male cover", "Ralskies", "Ralskies cover", "singing cover"],
+      "categoryId": "10",
+      "relatedVideoId": "_QHxiOJqryE",
+      "duplicateDisposition": "CLEARED BY CLIP-LEVEL AUDIT"
+    }
+  ]
+}
