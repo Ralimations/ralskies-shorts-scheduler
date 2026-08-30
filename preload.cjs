@@ -1,0 +1,2 @@
+const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('ralskies',{inventory:()=>ipcRenderer.invoke('engine:inventory'),calendar:()=>ipcRenderer.invoke('engine:calendar'),settings:()=>ipcRenderer.invoke('engine:settings'),saveSettings:s=>ipcRenderer.invoke('engine:save-settings',s),chooseFolder:()=>ipcRenderer.invoke('engine:choose-folder'),dryRun:a=>ipcRenderer.invoke('engine:dry-run',a)});
