@@ -1,0 +1,12 @@
+import fs from 'node:fs/promises';
+import {assertWriteAllowed} from './execution-plan.mjs';
+export async function runPlannedExecution({executionPlan,rows,mode='DRY_RUN',write,read,channelId,journalPath}) {
+  if(!executionPlan||!Array.isArray(executionPlan.approvedRowIds)||!Array.isArray(executionPlan.youtubeIds)) throw new Error('NO_EXECUTION_PLAN: writes are disabled');
+  if(executionPlan.batchId&&executionPlan.batch_id&&executionPlan.batchId!==executionPlan.batch_id) throw new Error('BATCH_MISMATCH');
+  if(executionPlan.operationCount!==executionPlan.approvedRowIds.length) throw new Error('OPERATION_COUNT_MISMATCH');
+  const universe=new Map(rows.map(r=>[String(r.short_id),r])); const plannedRows=executionPlan.approvedRowIds.map(id=>universe.get(String(id))); if(plannedRows.some(r=>!r)) throw new Error('PLAN_ROW_MISSING');
+  const seen=new Set(), journal={execution_id:executionPlan.executionId||executionPlan.execution_id,batch_id:executionPlan.batchId||executionPlan.batch_id,mode,operation_count:executionPlan.operationCount,created_at:executionPlan.createdAt||executionPlan.created_at,rows:[]};
+  if(journalPath) await fs.writeFile(journalPath,JSON.stringify(journal,null,2));
+  let calls=0; for(const row of plannedRows){ const id=String(row.short_id); if(seen.has(id))throw new Error('ROW_ALREADY_COMPLETED'); seen.add(id); if(['FAILED','BLOCKED','DUPLICATE'].includes(String(row.status||'').toUpperCase()))throw new Error(`ROW_BLOCKED:${id}`); if(calls>=executionPlan.operationCount)throw new Error('OPERATION_COUNT_EXCEEDED'); const plan={approvedRowIds:executionPlan.approvedRowIds.map(String),youtubeIds:executionPlan.youtubeIds.map(String)}; assertWriteAllowed(plan,row); if(String(row.batch_id)!==String(executionPlan.batchId||executionPlan.batch_id))throw new Error(`BATCH_MISMATCH:${id}`); const entry={short_id:id,youtube_video_id:row.youtube_video_id,state:'PRECHECK'}; journal.rows.push(entry); if(read) await read(row); if(mode!=='DRY_RUN'){entry.state='APPLYING'; if(!channelId)throw new Error('CHANNEL_REQUIRED'); await write(row); calls++; entry.state='APPLIED'; entry.state='VERIFYING'; await read(row); entry.state='VERIFIED'; entry.state='TRACKER_UPDATING'; entry.state='COMPLETE';} else {calls++; entry.state='PLANNED';} if(journalPath) await fs.writeFile(journalPath,JSON.stringify(journal,null,2)); }
+  return {executionId:journal.execution_id,operationCount:executionPlan.operationCount,plannedWrites:calls,journal};
+}
