@@ -25,3 +25,11 @@ phase2/runtime/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Isolated Phase B fixture outputs (keep harness scripts, not generated media/workbooks)
+/test-fixtures/**/TEST_SOURCE/
+/test-fixtures/**/TEST_BATCH/
+/test-fixtures/**/TEST_TRACKER.xlsx
+/test-fixtures/**/TEST_TRACKER.xlsx.*
+/test-fixtures/**/TEST_TRANSACTION.json
+/test-fixtures/**/TEST_TRANSACTION.json.*

@@ -2,7 +2,7 @@
   "name": "ralskies-content-engine",
   "version": "0.1.0",
   "private": true,
-  "main": "desktop/main.cjs",
+  "main": "main.cjs",
   "scripts": {"start": "electron .", "dev": "electron ."},
   "devDependencies": {"electron": "^32.0.0"}
 }

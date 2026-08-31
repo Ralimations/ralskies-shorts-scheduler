@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import { matchPrivateVideos, normalizeHashTitle } from "./youtube-matching.mjs";
+
+const hash = "A".repeat(64);
+assert.equal(normalizeHashTitle(hash), hash);
+assert.equal(normalizeHashTitle(hash.toLowerCase()), hash);
+assert.equal(normalizeHashTitle(`  ${hash.toLowerCase()}.mp4  `), hash);
+assert.equal(normalizeHashTitle("not-a-hash"), null);
+const row = { short_id: "RS-1", file_hash: hash, source_song: "Test Song", schedule_eligible: "YES" };
+let result = matchPrivateVideos([{ id: "yt-1", title: hash }], [row]);
+assert.equal(result.counts.MATCHED, 1);
+result = matchPrivateVideos([{ id: "yt-1", title: "B".repeat(64) }], [row]);
+assert.equal(result.counts.UNKNOWN, 1);
+result = matchPrivateVideos([{ id: "yt-1", title: "short" }], [row]);
+assert.equal(result.counts.INVALID_HASH_TITLE, 1);
+result = matchPrivateVideos([{ id: "yt-1", title: hash }], [row, { ...row, short_id: "RS-2" }]);
+assert.equal(result.counts.DUPLICATE_MATCH, 1);
+result = matchPrivateVideos([{ id: "yt-1", title: hash }], [{ ...row, youtube_video_id: "yt-1" }]);
+assert.equal(result.counts.ALREADY_LINKED, 1);
+result = matchPrivateVideos([{ id: "yt-1", title: hash }, { id: "yt-2", title: "C".repeat(64) }], [row]);
+assert.equal(result.counts.MATCHED, 1);
+console.log("youtube-matching tests passed");
