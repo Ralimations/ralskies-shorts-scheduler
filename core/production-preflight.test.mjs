@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';import {auditCompletedRows,preflightPlan,resolveCanonicalRow} from './production-preflight.mjs';
+const rows=Array.from({length:14},(_,i)=>({batch_id:'BULK_02',short_id:`S${i}`,status:i<3?'SCHEDULED':'BATCH_READY',youtube_video_id:`Y${i}`,public_title:`T${i}`}));const plan={batchId:'BULK_02',approvedRowIds:rows.slice(3).map(r=>r.short_id),youtubeIds:rows.slice(3).map(r=>r.youtube_video_id)};let previews=rows.map(r=>({shortId:r.short_id,finalTitle:r.public_title,checks:{videoExists:true,titleWillChange:true}}));let a=auditCompletedRows({rows,previews});assert.equal(a.length,3);let p=preflightPlan({plan,rows,previews});assert.equal(p.blockerCount,0);assert.equal(p.expectedChangeCount,11);p=preflightPlan({plan,rows,previews:previews.map(x=>x.shortId==='S3'?{...x,finalTitle:'DIFF',checks:{videoExists:false}}:x)});assert.ok(p.blockerCount>=1);p=preflightPlan({plan,rows,previews,recoveryRows:[{short_id:'S4'}]});assert.ok(p.blockers.some(x=>x.code==='RECOVERY_REQUIRED'));assert.equal(preflightPlan({plan:{batchId:'BULK_02',approvedRowIds:['S3','S4'],youtubeIds:['Y3','Y4']},rows:[rows[3],rows[4]],previews:[{shortId:'S3',channelId:'BAD',finalTitle:'T3',checks:{videoExists:true}},{shortId:'S4',finalTitle:'T4',checks:{videoExists:true}}]}).blockers.some(x=>x.code==='WRONG_CHANNEL'),true);console.log('production preflight tests passed');
+const canonical={short_id:'RS-TEST',batch_id:'BULK_02',youtube_video_id:'abc123',status:'BATCH_READY',public_title:'T'};const alias={short_id:'RS-TEST',batch_id:'',youtube_video_id:'',status:'DUPLICATE',duplicate_disposition:'RECORD_DUPLICATE'};for(const ordered of [[alias,canonical],[canonical,alias]])assert.equal(resolveCanonicalRow({planOperation:{shortId:'RS-TEST',batchId:'BULK_02',youtubeId:'abc123'},rows:ordered}).row,canonical);assert.equal(resolveCanonicalRow({planOperation:{shortId:'RS-TEST',batchId:'BULK_02',youtubeId:'abc123'},rows:[canonical,{...canonical}]}).code,'CANONICAL_TRACKER_ROW_AMBIGUOUS');assert.equal(resolveCanonicalRow({planOperation:{shortId:'RS-TEST',batchId:'BULK_02',youtubeId:'bad'},rows:[canonical]}).code,'CANONICAL_TRACKER_ROW_NOT_FOUND');
+
+
+
+
+
+
+
