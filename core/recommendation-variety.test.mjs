@@ -1,0 +1,1 @@
+import assert from 'node:assert/strict';import {variedHook,HUMAN_EDIT_CANDIDATES} from './recommendation-variety.mjs';const row={source_song:'Song'};assert.notEqual(variedHook(row,0),variedHook(row,1));assert.equal(Object.keys(HUMAN_EDIT_CANDIDATES).length,7);console.log('recommendation diversity tests passed');

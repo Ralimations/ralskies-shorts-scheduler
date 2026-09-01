@@ -29,3 +29,6 @@ npm start
 ```
 
 The renderer receives data only through the isolated preload bridge; OAuth credentials and tokens remain in `phase2/secrets` and are never exposed to the UI.
+
+## Title Intelligence
+Title Lab uses local 	itle_rag.json built from vidIQ history. RAG means retrieval-augmented generation: the app retrieves relevant past Ralskies titles and produces deterministic suggestions. This Strategy Engine is separate from the Operations Engine; it cannot call YouTube. Recommendations require human approval and can update only the local tracker. Safe fallback templates preserve song, property, and cover context.
