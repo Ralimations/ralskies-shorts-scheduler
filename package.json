@@ -4,8 +4,10 @@
   "private": true,
   "main": "main.cjs",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron ."
+    "start": "set ELECTRON_RUN_AS_NODE=&& electron .",
+    "dev": "set ELECTRON_RUN_AS_NODE=&& electron .",
+    "start:live": "set ELECTRON_RUN_AS_NODE=&& set RALSKIES_ENABLE_REAL=1&& electron .",
+    "test": "node --test"
   },
   "devDependencies": {
     "electron": "^32.0.0",

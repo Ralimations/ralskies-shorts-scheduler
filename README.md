@@ -1,34 +1,157 @@
-# Ralskies Content Engine CLI
+# Ralskies Content Engine
 
-Routine work is deterministic and local; Codex/LLM is not required. The source of truth is `Ralskies_Upload_Tracker.xlsx` (export it to CSV, or set `RALSKIES_TRACKER` to a CSV export until the spreadsheet adapter is enabled).
+A local-first workflow for preparing, uploading, scheduling, and verifying Ralskies Shorts. The tracker is the source of truth; routine hashing, matching, scheduling, metadata copying, and status updates are deterministic and do not require an LLM.
 
-Commands:
+## Operating rules
 
-```text
-node ralskies.mjs scan
-node ralskies.mjs prepare --dry-run
-node ralskies.mjs prepare
-node ralskies.mjs upload
-node ralskies.mjs verify
-node ralskies.mjs report
-```
+- Never upload, publish, schedule, rename, move, or overwrite production media during a dry run.
+- Preserve `DUPLICATE`, `BLOCKED`, and unresolved rows. Do not force them through the workflow.
+- Keep the 20:00–21:00 Asia/Manila window reserved for manual uploads.
+- Use the official YouTube account and confirm the Ralskies channel before every upload.
+- A possible remote write is never retried automatically. Reconcile the existing video instead.
+- Do not use the automated production Apply button for a manual batch.
 
-`scan` hashes MP4s and writes `outputs/ralskies-content-engine/exceptions.json`. `prepare` selects APPROVED/UPLOAD_READY rows, assigns 17:30 and 22:30 PHT slots, and never uses the protected 20:00–21:00 window. Upload/verify are intentionally gated until OAuth is linked and the queue is approved; no upload occurs during implementation.
+## Source of truth
 
-See `AGENTS.md` for permanent operating rules.
+The authoritative tracker is:
 
-## Desktop application (Phase A)
+`outputs/ralskies-content-engine/Ralskies_Upload_Tracker.xlsx`
 
-The new local desktop control layer lives in `desktop/` and keeps the CLI as the shared deterministic backend. Phase A is read-only/dry-run: it indexes local MP4s, reads the tracker inspection snapshot, and displays inventory, channel/API state, and persisted draft calendar data. It never uploads, publishes, schedules, renames, moves, or edits production media.
+Important fields:
 
-Install the desktop dependency once, then launch:
+- `file_hash`: immutable media identity
+- `file_path` / `original_path`: source media location
+- `public_title`, `description`, `youtube_tags`, `category`: approved metadata
+- `scheduled_date`, `scheduled_time`, `timezone`: publication target
+- `youtube_video_id`: the uploaded YouTube relationship
+- `related_video_id`: manual Related Video action
+- `status`, `verification_state`, `verification_timestamp`: workflow state
+
+Make a local tracker backup before a batch changes state. Never change the hash or original-file fields to make a row fit.
+
+## Standard workflow
+
+### 1. Inspect and reconcile
+
+1. Open the tracker and select one batch.
+2. Confirm the date range, row count, eligible count, exclusions, and current statuses.
+3. Verify source files exist and their SHA-256 values match `file_hash`.
+4. Check for existing YouTube IDs before uploading anything.
+5. Treat historical states as valid: `PREPARED`, `STAGED`, `PRIVATE_UPLOADED`, `BATCH_READY`, `SCHEDULED`, and `PUBLISHED`.
+
+Do not restage or re-upload a row that already has a valid YouTube relationship.
+
+### 2. Review titles and metadata
+
+Use the tracker’s approved values exactly. Title Intelligence recommendations are review candidates only; a human must choose and approve any title change. Do not regenerate metadata during upload.
+
+### 3. Stage an untouched batch
+
+For a genuinely fresh batch, use the desktop workflow:
+
+`PREVIEW → explicit approval → APPLY (COPY mode) → VERIFY`
+
+The staging Apply must copy media, preserve originals, create the manifest, back up the tracker, verify hashes, and leave the row in `BATCH_READY` (or the project’s equivalent). Never stage BULK_01 or completed BULK_02 rows again.
+
+### 4. Upload privately
+
+For manual operation, process one row at a time. Match the source file to the tracker using the Short ID and hash, not the song name alone.
+
+1. Sign in to YouTube Studio on the Ralskies channel.
+2. Select **Create → Upload videos** and choose the tracker’s source file.
+3. Enter `public_title`, `description`, `youtube_tags`, and `category` exactly.
+4. Set audience, age restrictions, altered-content, and paid-promotion declarations truthfully for the actual video.
+5. Wait for processing and review any blocking Checks result.
+6. Keep the video **Private** while entering and checking details.
+
+If an upload succeeds but a later step fails, keep and inspect that same private video. Do not create a second copy.
+
+### 5. Schedule in YouTube Studio
+
+1. Open the upload’s **Visibility** step and select **Schedule**.
+2. Set the timezone to **Asia/Manila / UTC+08:00**.
+3. Enter the tracker’s PHT date and time.
+4. Leave Premiere disabled unless separately approved.
+5. Confirm the scheduled time and click **Schedule**. A scheduled video remains private until its publish time. See the [YouTube scheduling guide](https://support.google.com/youtube/answer/1270709).
+
+Always verify the displayed timezone before saving. The UTC value is a cross-check, not a replacement for the tracker’s PHT target.
+
+### 6. Record the YouTube relationship
+
+After the upload is saved, copy the video ID from the YouTube URL and update only the matching tracker row:
+
+1. Set `youtube_video_id`.
+2. Optionally record `PRIVATE_UPLOADED` while the upload is still being completed.
+3. After the schedule is visible and verified, set `status = SCHEDULED`.
+4. Set `verification_state = VERIFIED` and record `verification_timestamp`.
+5. Preserve `file_hash`, original paths, batch ID, schedule, match evidence, and Related Video ID.
+
+### 7. Verify each row
+
+Before moving to the next row, check the YouTube Content page and the tracker:
+
+- video ID matches exactly
+- title and description match the tracker
+- complete tag set and category match
+- channel is Ralskies
+- visibility is Scheduled/private, not Public
+- PHT date/time and UTC conversion match
+- processing has no blocking error
+
+The desktop **Reconcile Read-Only** action may be used as an additional read-only check. Never use it to trigger a corrective write.
+
+### 8. Finish the batch audit
+
+When all rows are processed, confirm the tracker and YouTube Content page agree. Count scheduled rows, check for missing IDs or duplicate IDs, confirm no row became public early, and confirm no other batch changed.
+
+## BULK_03 manual schedule sheet
+
+Read-only inspection found 14 eligible `BATCH_READY` rows, 14 source files present, and 14 matching hashes. Use this order to reduce scheduling mistakes:
+
+| # | Short ID | Song | PHT | UTC publishAt | Related Video |
+|---:|---|---|---|---|---|
+| 1 | RS-1D0317049693 | Just a Man | 2026-09-14 07:00 | 2026-09-13 23:00Z | TteKHjCsF-0 |
+| 2 | RS-25B975F9CF0A | Dynasty | 2026-09-14 22:30 | 2026-09-14 14:30Z | — |
+| 3 | RS-EB5E9D3B75A3 | Arabian Nights | 2026-09-15 17:30 | 2026-09-15 09:30Z | epLfwcKg_f8 |
+| 4 | RS-3FFC27925ABE | Glimpse of Us | 2026-09-15 22:30 | 2026-09-15 14:30Z | — |
+| 5 | RS-0983F637FD15 | No Longer You | 2026-09-16 07:00 | 2026-09-15 23:00Z | — |
+| 6 | RS-C7746CC99AA7 | Your Idol | 2026-09-16 22:30 | 2026-09-16 14:30Z | XQ-Oof8K8lU |
+| 7 | RS-508FB2B4B278 | The Challenge | 2026-09-17 17:30 | 2026-09-17 09:30Z | — |
+| 8 | RS-7F842A2BE05E | Hallelujah | 2026-09-17 22:30 | 2026-09-17 14:30Z | — |
+| 9 | RS-8320BA345953 | Meant to Be Yours | 2026-09-18 07:00 | 2026-09-17 23:00Z | hxyZJGGWK0Y |
+| 10 | RS-050A31DAFEF7 | Chest Pain (I Love) | 2026-09-18 22:30 | 2026-09-18 14:30Z | — |
+| 11 | RS-9C2006EFA40B | Golden (Disney Version) | 2026-09-19 17:30 | 2026-09-19 09:30Z | PN_n7FYq0nA |
+| 12 | RS-ACD5B62F734C | Eternity | 2026-09-19 22:30 | 2026-09-19 14:30Z | YnBhTyGArv8 |
+| 13 | RS-46FCA02D41C5 | Soda Pop | 2026-09-20 07:00 | 2026-09-19 23:00Z | h91QdzIXDBY |
+| 14 | RS-B3BFBDF8B8AA | Don’t You Dare | 2026-09-20 22:30 | 2026-09-20 14:30Z | L_z9hTRKTO4 |
+
+Related Video IDs are manual actions. If YouTube Studio cannot select the intended video, leave the existing tracker ID unchanged and record the action for later; do not block the scheduling state or invent a replacement ID.
+
+## Recovery and exceptions
+
+If the remote result is uncertain, stop that row. Do not retry an upload or metadata write. Use read-only reconciliation to determine whether the existing video already has the intended state. Finalize the tracker only after the remote state is verified.
+
+Investigate only entries written to `exceptions.json` or `exceptions.csv`. Keep unresolved and duplicate rows out of the upload queue.
+
+## Desktop and CLI
+
+Install and launch the desktop application:
 
 ```text
 npm install
 npm start
 ```
 
-The renderer receives data only through the isolated preload bridge; OAuth credentials and tokens remain in `phase2/secrets` and are never exposed to the UI.
+Useful read-only desktop actions are Scan Folder, Preview Schedule, Verify YouTube, and Reconcile Read-Only. The renderer receives data through the isolated preload bridge; OAuth credentials remain local under `phase2/secrets`.
 
-## Title Intelligence
-Title Lab uses local 	itle_rag.json built from vidIQ history. RAG means retrieval-augmented generation: the app retrieves relevant past Ralskies titles and produces deterministic suggestions. This Strategy Engine is separate from the Operations Engine; it cannot call YouTube. Recommendations require human approval and can update only the local tracker. Safe fallback templates preserve song, property, and cover context.
+CLI commands remain available for deterministic preparation and reporting:
+
+```text
+node ralskies.mjs scan
+node ralskies.mjs prepare --dry-run
+node ralskies.mjs report
+```
+
+Upload and production-apply commands are gated. Use them only when an exact immutable plan has been explicitly approved. For the current manual workflow, perform the YouTube steps above instead.
+
+See `AGENTS.md` for permanent operating rules and `PRD_Ralskies_Content_Engine.md` for the full product specification.

@@ -1,9 +1,14 @@
 import fs from "node:fs/promises";
 import { backupTracker, openTracker, readTracker, saveTracker, updateTrackerRows } from "./tracker-service.mjs";
 
-export async function confirmMatches({ discovery, trackerPath, batchId = "BULK_02" }) {
+export function assertConfirmableDiscovery(discovery, batchId) {
   if (!discovery || discovery.batchId !== batchId) throw new Error("Discovery result does not belong to the selected batch.");
-  if (discovery.expected !== discovery.selectedRows || discovery.counts.MATCHED !== discovery.expected || discovery.counts.UNKNOWN || discovery.counts.DUPLICATE_MATCH) throw new Error("Confirmation requires an exact, unambiguous match for every expected row.");
+  if (discovery.expected !== discovery.selectedRows || discovery.counts.MATCHED !== discovery.expected || discovery.missing?.length || discovery.counts.DUPLICATE_MATCH) throw new Error("Confirmation requires an exact, unambiguous match for every expected batch row.");
+  return true;
+}
+
+export async function confirmMatches({ discovery, trackerPath, batchId = "BULK_02" }) {
+  assertConfirmableDiscovery(discovery, batchId);
   const matched = discovery.results.filter((result) => result.status === "MATCHED"); if (matched.length !== discovery.expected) throw new Error("Confirmation result count does not match the expected batch count.");
   const tracker = await openTracker(trackerPath); const values = tracker.queue.getUsedRange().values; const extra = ["match_status", "match_verified_at"]; const missing = extra.filter((header) => !(header in tracker.index));
   if (missing.length) { const start = tracker.headers.length; tracker.queue.getRangeByIndexes(0, start, values.length, missing.length).values = [missing, ...Array.from({ length: values.length - 1 }, () => missing.map(() => ""))]; missing.forEach((header, offset) => { tracker.headers.push(header); tracker.index[header] = start + offset; }); }
@@ -12,4 +17,3 @@ export async function confirmMatches({ discovery, trackerPath, batchId = "BULK_0
   if (verification.some((item) => !item.confirmed)) throw new Error("Tracker confirmation verification failed.");
   return { batchId, state: "MATCHES_CONFIRMED", expected: updates.length, verified: verification.filter((item) => item.confirmed).length, backupPath, verification };
 }
-

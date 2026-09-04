@@ -1,0 +1,40 @@
+.progress-box {
+  border: 2px solid #000;
+  padding: 16px;
+}
+
+.progress-summary,
+.progress-current {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.progress-summary {
+  font-size: 16px;
+}
+
+.progress-box progress {
+  accent-color: #000;
+  display: block;
+  height: 24px;
+  margin: 14px 0;
+  width: 100%;
+}
+
+.progress-current {
+  border-bottom: 1px solid #999;
+  border-top: 1px solid #999;
+  padding: 12px 0;
+}
+
+.progress-current span {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+
+.progress-box p {
+  font-size: 13px;
+  margin: 12px 0 0;
+}

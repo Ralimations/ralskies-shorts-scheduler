@@ -1,20 +1,29 @@
-import { createExecutionPlan } from './execution-plan.mjs';
+import { createExecutionPlan, hashExecutionPlan } from './execution-plan.mjs';
+import { buildBatchReadiness, linkManifestRows, metadataReadiness, utcPublishAt } from './existing-batch-service.mjs';
 
 const RECOVERY = new Set(['APPLIED','APPLIED_UNVERIFIED','VERIFYING','VERIFIED_PENDING_TRACKER','RECONCILIATION_REQUIRED']);
 const COMPLETE = new Set(['SCHEDULED','PUBLISHED','COMPLETE']);
 const BLOCKED = new Set(['BLOCKED','DUPLICATE','FAILED']);
-function excelDate(v){if(!v)return '1970-01-01';if(typeof v==='number')return new Date(Date.UTC(1899,11,30)+v*86400000).toISOString().slice(0,10);const d=new Date(v);return Number.isNaN(d.getTime())?'1970-01-01':d.toISOString().slice(0,10)}
-function planned(row){const status=String(row.status||'').toUpperCase();if(['NOT_APPROVED','UNAPPROVED','PENDING_APPROVAL'].includes(status))return false;const dup=String(row.duplicate_disposition||'').toUpperCase();return !COMPLETE.has(status)&&!RECOVERY.has(status)&&!BLOCKED.has(status)&&!dup.includes('DUPLICATE')&&String(row.youtube_video_id||'').trim()}
-export function buildProductionReview({batchId='BULK_02',rows=[],recoveryRows=[]}={}){
- const batch=rows.filter(r=>String(r.batch_id)===String(batchId)); const recoveryIds=new Set(recoveryRows.filter(r=>RECOVERY.has(String(r.state||'').toUpperCase())).map(r=>String(r.short_id)));
- const exclusions=batch.filter(r=>!planned(r)||recoveryIds.has(String(r.short_id)));
- const executable=batch.filter(r=>planned(r)&&!recoveryIds.has(String(r.short_id)));
- const plan=createExecutionPlan({batchId,mode:'SELECTED',rowIds:executable.map(r=>String(r.short_id)),rows:executable});
- const outRows=executable.map(r=>({shortId:String(r.short_id),song:String(r.source_song||''),youtubeId:String(r.youtube_video_id),currentYoutubeTitle:String(r.current_youtube_title||r.youtube_title||r.public_title||''),finalAuthoritativeTitle:String(r.public_title||''),schedulePht:`${excelDate(r.scheduled_date)} ${String(r.scheduled_time||'')}`.trim(),publishAtUtc:r.publishAtUtc||new Date(`${excelDate(r.scheduled_date)}T${String(r.scheduled_time||'00:00')}:00+08:00`).toISOString(),currentStatus:String(r.status||'')}));
- const blockedCount=batch.filter(r=>BLOCKED.has(String(r.status||'').toUpperCase())||String(r.duplicate_disposition||'').toUpperCase().includes('DUPLICATE')||!String(r.youtube_video_id||'').trim()).length;
- return {batchId,executionId:plan.executionId,createdAt:plan.createdAt,completedCount:batch.filter(r=>COMPLETE.has(String(r.status||'').toUpperCase())).length,readyCount:outRows.length,blockedCount,recoveryRequiredCount:batch.filter(r=>recoveryIds.has(String(r.short_id))).length,plannedOperationCount:plan.operationCount,concurrency:1,failFast:true,rows:outRows,plan,exclusions:exclusions.map(r=>({shortId:String(r.short_id),status:String(r.status||''),reason:recoveryIds.has(String(r.short_id))?'RECOVERY_REQUIRED':String(r.status||r.duplicate_disposition||'BLOCKED')}))};
+const clean = value => String(value ?? '').trim();
+function legacyLink(row) { return { manifest: row, tracker: row, classification: COMPLETE.has(clean(row.status).toUpperCase()) ? 'ALREADY_SCHEDULED' : 'MATCHED', identity: { hash: clean(row.file_hash).toUpperCase(), shortId: clean(row.short_id) }, identityMethod: 'TRACKER' }; }
+
+export function buildProductionReview({ batchId = 'BULK_02', rows = [], recoveryRows = [], manifestRows } = {}) {
+  const batch = rows.filter(row => clean(row.batch_id) === clean(batchId));
+  const links = Array.isArray(manifestRows) ? linkManifestRows({ manifestRows, trackerRows: batch, batchId }) : batch.map(legacyLink);
+  const recoveryIds = new Set(recoveryRows.filter(row => RECOVERY.has(clean(row.state).toUpperCase())).map(row => clean(row.short_id || row.shortId)));
+  const readiness = Array.isArray(manifestRows) ? buildBatchReadiness({ links, recoveryIds }) : links.map(link => {
+    const row = link.tracker, status = clean(row?.status).toUpperCase(), hasMetadataFields = row && ('description' in row || 'youtube_tags' in row || 'category' in row);
+    const metadata = hasMetadataFields ? metadataReadiness(row) : { state: 'METADATA_READY', missing: [], utcPublishAt: utcPublishAt(row) };
+    const ready = link.classification === 'MATCHED' && metadata.state === 'METADATA_READY' && clean(row?.youtube_video_id) && !recoveryIds.has(clean(row?.short_id)) && !BLOCKED.has(status) && !['NOT_APPROVED','UNAPPROVED','PENDING_APPROVAL'].includes(status) && !COMPLETE.has(status);
+    return { ...link, metadata, recovery: recoveryIds.has(clean(row?.short_id)), productionEligibility: (BLOCKED.has(status) || ['NOT_APPROVED','UNAPPROVED','PENDING_APPROVAL'].includes(status)) ? 'BLOCKED' : ready ? 'READY' : clean(row?.youtube_video_id) ? 'BLOCKED' : 'AWAITING_PRIVATE_UPLOAD', utcPublishAt: metadata.utcPublishAt };
+  });
+  const executable = readiness.filter(item => item.productionEligibility === 'READY' && item.tracker).sort((a, b) => String(a.utcPublishAt || '').localeCompare(String(b.utcPublishAt || '')) || clean(a.tracker.short_id).localeCompare(clean(b.tracker.short_id)));
+  const executableRows = executable.map(item => item.tracker);
+  const basePlan = createExecutionPlan({ batchId, mode: 'PRODUCTION', rowIds: executableRows.map(row => clean(row.short_id)), rows: executableRows });
+  const planIdentity = { ...basePlan, concurrency: 1, failFast: true };
+  const plan = Object.freeze({ ...planIdentity, planHash: hashExecutionPlan(planIdentity) });
+  const displayed = Array.isArray(manifestRows) ? readiness : readiness.filter(item => item.productionEligibility === 'READY');
+  const outRows = displayed.map((item, index) => { const row = item.tracker || {}, meta = item.metadata || {}; return { order: item.productionEligibility === 'READY' ? executable.findIndex(x => x === item) + 1 : null, shortId: clean(row.short_id || item.identity?.shortId), song: clean(row.source_song || item.manifest?.song), hash: clean(row.file_hash || item.identity?.hash).toUpperCase(), youtubeId: clean(row.youtube_video_id), currentYoutubeTitle: clean(row.current_youtube_title || row.youtube_title || row.public_title), finalAuthoritativeTitle: clean(row.public_title), descriptionStatus: meta.state, tagsStatus: clean(row.youtube_tags) ? 'READY' : 'MISSING', category: clean(row.category || row.youtube_category_id), schedulePht: row.scheduled_date || row.scheduled_time ? `${String(row.scheduled_date || '')} ${String(row.scheduled_time || '')}`.trim() : '', publishAtUtc: item.utcPublishAt, currentStatus: clean(row.status), verification: clean(row.verification_state), productionEligibility: item.productionEligibility, classification: item.classification, missingMetadata: meta.missing || [] }; });
+  const exclusions = readiness.filter(item => item.productionEligibility !== 'READY').map(item => ({ shortId: clean(item.tracker?.short_id || item.identity?.shortId), status: clean(item.tracker?.status), reason: item.recovery ? 'RECOVERY_REQUIRED' : item.classification !== 'MATCHED' ? item.classification : item.metadata?.state === 'METADATA_INCOMPLETE' ? `METADATA_INCOMPLETE:${(item.metadata.missing || []).join(',')}` : item.productionEligibility }));
+  return { batchId, executionId: plan.executionId, planHash: plan.planHash, createdAt: plan.createdAt, completedCount: batch.filter(row => COMPLETE.has(clean(row.status).toUpperCase())).length, readyCount: executable.length, blockedCount: exclusions.filter(item => /^(BLOCKED|DUPLICATE|AMBIGUOUS|MISSING)/.test(String(item.reason))).length, recoveryRequiredCount: readiness.filter(item => item.recovery).length, plannedOperationCount: plan.operationCount, concurrency: 1, failFast: true, rows: outRows, readiness, exclusions, plan, manifestRowCount: manifestRows?.length ?? batch.length, matchedCount: readiness.filter(item => item.classification === 'MATCHED').length, metadataCompleteCount: readiness.filter(item => item.metadata?.state === 'METADATA_READY').length, scheduleCompleteCount: readiness.filter(item => item.metadata?.utcPublishAt).length, youtubeLinkedCount: readiness.filter(item => clean(item.tracker?.youtube_video_id)).length };
 }
-
-
-
-
