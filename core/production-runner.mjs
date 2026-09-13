@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import {assertWriteAllowed} from './execution-plan.mjs';
 import {persistExecutionRecord,appendProductionLog,assertDurableWrite,readExecutionRecord,readRowJournal,updateExecutionRecordState,aggregateExecutionState} from './production-durability.mjs';
 import crypto from 'node:crypto';
-export async function runPlannedExecution({executionPlan,rows,mode='DRY_RUN',write,read,trackerUpdate,channelId,journalPath,onTransition,interruptAfterState,interruptPredicate,executionRecordPath,productionLogPath,beforeWrite,beforeContextRead,verifyRemote,verificationDelays=[0,2000,5000,10000,20000,30000,30000,30000]}={}) {
+export const PRODUCTION_VERIFICATION_DELAYS=[0,2000,5000,10000,20000,30000,30000,30000,30000,30000,30000,30000,30000,30000];
+export async function runPlannedExecution({executionPlan,rows,mode='DRY_RUN',write,read,trackerUpdate,channelId,journalPath,onTransition,interruptAfterState,interruptPredicate,executionRecordPath,productionLogPath,beforeWrite,beforeContextRead,verifyRemote,verificationDelays=PRODUCTION_VERIFICATION_DELAYS}={}) {
  if(!executionPlan||!Array.isArray(executionPlan.approvedRowIds)||!Array.isArray(executionPlan.youtubeIds)) throw new Error('NO_EXECUTION_PLAN: writes are disabled');
  if(executionPlan.operationCount!==executionPlan.approvedRowIds.length) throw new Error('OPERATION_COUNT_MISMATCH');
  const universe=new Map(rows.map(r=>[String(r.short_id),r]));const plannedRows=executionPlan.approvedRowIds.map(id=>universe.get(String(id)));if(plannedRows.some(r=>!r))throw new Error('PLAN_ROW_MISSING');

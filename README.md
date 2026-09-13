@@ -251,7 +251,7 @@ The connection is limited to localhost, 127.0.0.1, or ::1, with your chosen port
 The integration uses LM Studio's [structured output endpoint](https://lmstudio.ai/docs/developer/openai-compat/structured-output)
 and [model listing endpoint](https://lmstudio.ai/docs/developer/openai-compat/models).
 
-YouTube metadata verification polls with reads only for about two minutes after
+YouTube metadata verification polls with reads only for about five minutes after
 a successful update, allowing delayed tag readback to settle. It does not repeat
 the update. If verification still fails, reconcile the persisted execution before
 creating a new plan for the remaining rows.
