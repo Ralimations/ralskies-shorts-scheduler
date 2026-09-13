@@ -10,7 +10,25 @@ export function createYouTubeRealClient({config,fetchImpl=fetch,tokenProvider}={
   channels:{async mine(){const q=new URLSearchParams({part:'id,snippet,contentDetails',mine:'true'});const body=await api(config,`https://www.googleapis.com/youtube/v3/channels?${q}`,{},fetchImpl,token);return body.items?.[0]||null;}},
   videos:{
     async update(payload){return api(config,'https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatus',{method:'PUT',body:JSON.stringify(payload)},fetchImpl,token);},
-    async list(id){const q=new URLSearchParams({part:'id,snippet,status,processingDetails',id});const body=await api(config,`https://www.googleapis.com/youtube/v3/videos?${q}`,{},fetchImpl,token);return body.items?.[0]||null;},
+    async list(id){const q=new URLSearchParams({part:'id,snippet,status,processingDetails,fileDetails',id});const body=await api(config,`https://www.googleapis.com/youtube/v3/videos?${q}`,{},fetchImpl,token);return body.items?.[0]||null;},
+    async listChannelUploads(playlistId){
+      if (!playlistId) throw Error('UPLOADS_PLAYLIST_REQUIRED');
+      const ids = []; let pageToken = '';
+      do {
+        const q = new URLSearchParams({part:'contentDetails',playlistId,maxResults:'50'});
+        if(pageToken) q.set('pageToken',pageToken);
+        const page = await api(config,'https://www.googleapis.com/youtube/v3/playlistItems?'+q,{},fetchImpl,token);
+        ids.push(...(page.items||[]).map(item=>item.contentDetails?.videoId).filter(Boolean));
+        pageToken=page.nextPageToken||'';
+      } while(pageToken);
+      const videos=[];
+      for(let offset=0;offset<ids.length;offset+=50){
+        const q=new URLSearchParams({part:'id,snippet,status,processingDetails,fileDetails',id:ids.slice(offset,offset+50).join(',')});
+        const page=await api(config,'https://www.googleapis.com/youtube/v3/videos?'+q,{},fetchImpl,token);
+        videos.push(...(page.items||[]));
+      }
+      return videos;
+    },
     async insertPrivateResumable(operation){
       if(operation.privacyStatus!=='private')throw Error('UPLOAD_MUST_START_PRIVATE');
       const stat=await fsp.stat(operation.filePath),auth=`Bearer ${await token()}`;
@@ -18,6 +36,7 @@ export function createYouTubeRealClient({config,fetchImpl=fetch,tokenProvider}={
       const init=await fetchImpl('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet%2Cstatus',{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json; charset=UTF-8','X-Upload-Content-Length':String(stat.size),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:operation.temporaryTitle,description:'',categoryId:operation.categoryId||'10'},status:{privacyStatus:'private',selfDeclaredMadeForKids:false}})});
       if(!init.ok)await parse(init);
       const location=init.headers.get('location');if(!location)throw Error('YOUTUBE_RESUMABLE_SESSION_MISSING');
+      if (operation.saveSession) await operation.saveSession(location);
       let response;try{response=await fetchImpl(location,{method:'PUT',headers:{Authorization:auth,'Content-Type':'video/mp4','Content-Length':String(stat.size)},body:fs.createReadStream(operation.filePath),duplex:'half'});}catch(error){const wrapped=Error(`UPLOAD_REMOTE_STATE_UNKNOWN:${error.message}`);wrapped.cause=error;throw wrapped;}
       return parse(response);
     }

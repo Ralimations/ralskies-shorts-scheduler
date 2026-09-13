@@ -42,7 +42,7 @@ function batchTable(){
 }
 function batches(){
   const c=counts(),w=workflow();
-  return `<section class="panel"><div class="section-title"><div><h2>Prepared batches</h2><p class="subtle">The app uses the existing bulk folders and manifests. It does not restage them.</p></div><span class="pill">${esc(state.selectedBatch)}</span></div><table><thead><tr><th>Batch</th><th>Date range</th><th>Rows</th><th>YouTube IDs</th><th>Complete</th><th>Actions</th></tr></thead><tbody>${batchTable()}</tbody></table></section><section class="panel section"><div class="section-title"><h2>${esc(state.selectedBatch)} production flow</h2><span class="pill">NEXT: ${esc(w.title)}</span></div>${summaryCards()}<div class="button-row"><button class="primary" data-discover-private ${c.awaiting?'':'disabled'}>1. Find &amp; Match Private Videos</button><button class="ghost" data-metadata-review ${c.ready?'':'disabled'}>2. Review Metadata &amp; Schedule</button><button class="ghost" data-upload-review ${c.awaiting?'':'disabled'}>Upload Missing Videos via API</button></div><p class="subtle">Because your videos are already private on YouTube with SHA-256 titles, start with Find &amp; Match Private Videos.</p></section>`;
+  return `<section class="panel"><div class="section-title"><div><h2>Prepared batches</h2><p class="subtle">The app uses the existing bulk folders and manifests. It does not restage them.</p></div><span class="pill">${esc(state.selectedBatch)}</span></div><table><thead><tr><th>Batch</th><th>Date range</th><th>Rows</th><th>YouTube IDs</th><th>Complete</th><th>Actions</th></tr></thead><tbody>${batchTable()}</tbody></table></section><section class="panel section"><div class="section-title"><h2>${esc(state.selectedBatch)} production flow</h2><span class="pill">NEXT: ${esc(w.title)}</span></div>${summaryCards()}<div class="button-row"><button class="primary" data-discover-private ${c.awaiting?'':'disabled'}>1. Find &amp; Match Private Videos</button><button class="ghost" data-metadata-review ${c.ready?'':'disabled'}>2. Review Metadata &amp; Schedule</button><button class="ghost" data-upload-review ${c.awaiting?'':'disabled'}>Upload Missing Videos via API</button></div><p class="subtle">Upload new files privately through the API, or upload hashed files manually and use Find &amp; Match Private Videos.</p></section>`;
 }
 function queue(){
   const rows=state.batchDetail?.readiness||[];
@@ -67,16 +67,17 @@ function settings(){
 function logs(){
   return `<section class="panel"><div class="section-title"><h2>Recovery and activity</h2><span class="pill">${state.recovery.length} recovery items</span></div>${state.recovery.length?state.recovery.map(row=>`<div class="callout"><strong>${esc(row.short_id)} · ${esc(row.state)}</strong><span>Execution ${esc(row.execution_id)} · YouTube ${esc(row.youtube_video_id||'unknown')}</span></div>`).join(''):'<div class="empty">No unresolved production recovery items.</div>'}</section>`;
 }
-function currentView(){return state.view==='dashboard'?dashboard():state.view==='videos'?videos():state.view==='calendar'?calendar():state.view==='queue'?queue():state.view==='batches'?batches():state.view==='youtube'?youtube():state.view==='title-lab'?titleLab():state.view==='settings'?settings():logs();}
-function render(){const title={dashboard:'Dashboard',videos:'Videos',calendar:'Calendar',queue:'Upload Queue',batches:'Batches',youtube:'YouTube','title-lab':'Title Lab',settings:'Settings',logs:'Logs'}[state.view]||'Dashboard';$('#view-title').textContent=title;$('#view').innerHTML=currentView();$('#modal-root').innerHTML=modalHtml();document.querySelectorAll('nav button').forEach(button=>button.classList.toggle('active',button.dataset.view===state.view));}
+function currentView(){return state.view==='drafts'?window.DraftViews.drafts(state,esc):state.view==='dashboard'?dashboard():state.view==='videos'?videos():state.view==='calendar'?(window.DraftViews?window.DraftViews.calendar(state,esc):calendar()):state.view==='queue'?queue():state.view==='batches'?batches():state.view==='youtube'?youtube():state.view==='title-lab'?titleLab():state.view==='settings'?settings():logs();}
+function render(){const title={drafts:'Drafts',dashboard:'Dashboard',videos:'Videos',calendar:'Calendar',queue:'Upload Queue',batches:'Batches',youtube:'YouTube','title-lab':'Title Lab',settings:'Settings',logs:'Logs'}[state.view]||'Dashboard';$('#view-title').textContent=title;$('#view').innerHTML=currentView();$('#modal-root').innerHTML=modalHtml();document.querySelectorAll('nav button').forEach(button=>button.classList.toggle('active',button.dataset.view===state.view));}
 async function refresh(){
   const [inventory,calendar,batches,titleQueue,recovery,settings]=await Promise.all([window.ralskies.inventory(),window.ralskies.calendar(),window.ralskies.batches(),window.ralskies.titleReviewQueue(),window.ralskies.recoveryJournals(),window.ralskies.settings()]);
   Object.assign(state,{inventory,calendar,batches,titleQueue,recovery,settings});
+  if(window.ralskies.draftStatus)state.drafts=await window.ralskies.draftStatus();
   if(!batches?.batches?.some(batch=>batch.batchId===state.selectedBatch))state.selectedBatch=batches?.batches?.[0]?.batchId||'BULK_03';
-  state.batchDetail=batches?.batches?.find(batch=>batch.batchId===state.selectedBatch)?.detail||await window.ralskies.batchDetail(state.selectedBatch);
+  state.batchDetail=batches?.batches?.find(batch=>batch.batchId===state.selectedBatch)?.detail||(batches?.batches?.length?await window.ralskies.batchDetail(state.selectedBatch):null);
   render();
 }
-async function selectBatch(batchId){state.selectedBatch=batchId;state.batchDetail=await window.ralskies.batchDetail(batchId);state.modal=null;render();notify(`${batchId} selected. ${workflow().title}.`);}
+async function selectBatch(batchId){state.view='batches';state.selectedBatch=batchId;state.batchDetail=await window.ralskies.batchDetail(batchId);state.modal=null;render();notify(`${batchId} selected. ${workflow().title}.`);}
 function batchDetailBody(detail){const c=counts(detail);return `<div class="grid"><div class="card">Rows: ${c.total}</div><div class="card">Linked: ${c.linked}</div><div class="card">Ready: ${c.ready}</div><div class="card">Complete: ${c.scheduled}</div></div><dl class="details"><dt>Folder</dt><dd>${esc(detail.folderPath)}</dd><dt>Manifest</dt><dd>${esc(detail.manifest?.manifestPath)}</dd></dl><div class="button-row"><button class="primary" data-discover-private>Find private videos</button><button class="ghost" data-metadata-review>Metadata review</button></div>`;}
 async function discoverPrivate(){
   notify(`Reading private YouTube videos for ${state.selectedBatch}…`,'info');
@@ -146,6 +147,7 @@ document.addEventListener('click',async event=>{
   if(target.matches('[data-close-modal]')){closeModal();return;}
   try{
     const nav=target.closest('nav button');if(nav){state.view=nav.dataset.view;render();return;}
+    if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-draft-')||name.startsWith('data-calendar-'))){await draftAction(target);return;}
     const select=target.closest('[data-select-batch]');if(select){await selectBatch(select.dataset.selectBatch);return;}
     const inspect=target.closest('[data-inspect-batch]');if(inspect){await selectBatch(inspect.dataset.inspectBatch);setModal(`${state.selectedBatch} · Batch Details`,batchDetailBody(state.batchDetail));return;}
     if(target.closest('[data-view-batches]')){state.view='batches';render();return;}
@@ -167,3 +169,64 @@ document.addEventListener('click',async event=>{
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&state.modal)closeModal();});
 if(typeof window.ralskies.onProductionProgress==='function')window.ralskies.onProductionProgress(handleProductionProgress);
 refresh().catch(error=>{render();notify(`Startup failed: ${error?.message||error}`,'error');});
+
+async function refreshDrafts(){
+  if(window.ralskies.draftStatus)state.drafts=await window.ralskies.draftStatus();
+  state.calendar=await window.ralskies.calendar();
+  const batches=await window.ralskies.batches();state.batches=batches;
+  if(state.selectedBatch)state.batchDetail=batches?.batches?.find(batch=>batch.batchId===state.selectedBatch)?.detail||state.batchDetail;
+  render();
+}
+function showDraftSchedule(){
+  const batches=[...new Set((state.drafts?.rows||[]).map(row=>row.batch_id))];
+  if(!batches.length){notify('Intake new drafts first.','info');return;}
+  setModal('Reserve posting times',`<p>Reserve empty slots locally. Publication is applied later through the batch review.</p><label>New batch<select id="draft-schedule-batch">${batches.map(id=>`<option value="${esc(id)}" ${id===state.selectedBatch?'selected':''}>${esc(id)}</option>`).join('')}</select></label><label>Start date (Manila)<input type="date" id="draft-start" value="${new Date(Date.now()+8*3600000).toISOString().slice(0,10)}"></label><label>Available times, separated by commas<input id="draft-slots" value="17:30, 22:30"></label><label>Frequency<select id="draft-cadence"><option value="daily">Daily</option><option value="every-other-day">Every other day</option></select></label><label class="checkbox-label"><input id="draft-optional" type="checkbox"> Enable optional 01:30 slot</label><p>20:00–21:00 is always reserved for manual posts. Existing reservations and old batches remain unchanged.</p>`,'<button class="ghost" data-close-modal>Cancel</button><button class="primary" data-draft-reservation-preview>Preview Reservations</button>');
+}
+async function draftAction(target){
+  if(target.closest('[data-draft-folder]')){
+    const folder=await window.ralskies.chooseFolder();if(folder){await window.ralskies.draftConfigure({draftFolder:folder,enabled:false});await refreshDrafts();}return true;
+  }
+  if(target.closest('[data-draft-watch]')){
+    await window.ralskies.draftConfigure({enabled:!state.drafts?.settings?.enabled});await refreshDrafts();return true;
+  }
+  if(target.closest('[data-draft-preview],[data-draft-scan]')){
+    const dryRun=Boolean(target.closest('[data-draft-preview]')),result=await window.ralskies.draftScan({dryRun});
+    await refreshDrafts();
+    setModal(dryRun?'Intake preview':'Intake result',`<p>${result.added.length} ${dryRun?'would be added':'added'} · ${result.skipped.length} already tracked · ${result.waiting.length} still copying · ${result.exceptions.length} exceptions</p><p>${dryRun?'No files or tracker rows were changed.':'New drafts are available below. No YouTube upload occurred.'}</p><ul>${result.added.map(row=>`<li>${esc(row.original_filename)} → ${esc(row.short_id)}</li>`).join('')}${result.exceptions.map(item=>`<li>${esc(item.message)}</li>`).join('')}</ul>`);return true;
+  }
+  const edit=target.closest('[data-draft-edit]');
+  if(edit){
+    const row=state.drafts.rows.find(item=>item.short_id===edit.dataset.draftEdit);state.editingDraft=row.short_id;
+    setModal('Draft metadata',`<p>${esc(row.original_filename)} · ${esc(row.short_id)}</p>${[['public_title','Title'],['source_song','Song'],['artist_or_fandom','Artist / fandom'],['youtube_tags','Tags (comma separated)'],['related_video_id','Related video ID (optional)']].map(([key,label])=>`<label>${label}<input id="draft-meta-${key}" value="${esc(row[key])}" ${key==='public_title'?'maxlength="100"':''}></label>`).join('')}<label>Description<textarea id="draft-meta-description" rows="6" maxlength="5000">${esc(row.description)}</textarea></label><label>Category<select id="draft-meta-category"><option value="">Choose category</option><option value="Music" ${row.category==='Music'?'selected':''}>Music</option></select></label><p>Blank required fields keep this draft waiting for metadata. Changes apply to this draft only.</p>`,'<button class="ghost" data-close-modal>Cancel</button><button class="primary" data-draft-metadata-save>Save Metadata</button>');return true;
+  }
+  if(target.closest('[data-draft-metadata-save]')){
+    const metadata=Object.fromEntries(['public_title','description','source_song','artist_or_fandom','youtube_tags','related_video_id','category'].map(key=>[key,$('#draft-meta-'+key).value]));
+    await window.ralskies.draftMetadata({shortId:state.editingDraft,metadata});state.modal=null;await refreshDrafts();notify('Draft metadata saved.');return true;
+  }
+  if(target.closest('[data-draft-schedule]')){showDraftSchedule();return true;}
+  if(target.closest('[data-draft-reservation-preview]')){
+    const plan=await window.ralskies.draftReservePreview({batchId:$('#draft-schedule-batch').value,startDate:$('#draft-start').value,slots:$('#draft-slots').value.split(',').map(value=>value.trim()).filter(Boolean),cadence:$('#draft-cadence').value,optionalSlot:$('#draft-optional').checked});
+    state.reservationPlan=plan;
+    setModal('Review local reservations',`<p>${plan.updates.length} new reservations. YouTube sync: ${esc(plan.snapshotAt||'not yet synced; tracker only')}.</p><table><thead><tr><th>Short</th><th>Date</th><th>Time (Manila)</th></tr></thead><tbody>${plan.updates.map(row=>`<tr><td>${esc(row.short_id)}</td><td>${esc(row.scheduled_date)}</td><td>${esc(row.scheduled_time)}</td></tr>`).join('')}</tbody></table>`,'<button class="ghost" data-close-modal>Cancel</button><button class="primary" data-draft-reservation-save '+(plan.updates.length?'':'disabled')+'>Save Reservations</button>');return true;
+  }
+  if(target.closest('[data-draft-reservation-save]')){
+    await window.ralskies.draftReserve({plan:state.reservationPlan});state.modal=null;await refreshDrafts();notify('Posting times reserved locally.');return true;
+  }
+  const link=target.closest('[data-draft-link]');
+  if(link){state.linkingDraft=link.dataset.draftLink;setModal('Link private YouTube upload',`<p>Upload the hashed MP4 and finish saving it as Private. Keep the hash filename or hash title so the program can verify the match.</p><label>YouTube video URL or ID<input id="draft-youtube-id"></label>`,'<button class="ghost" data-close-modal>Cancel</button><button class="primary" data-draft-link-save>Verify and Link</button>');return true;}
+  if(target.closest('[data-draft-link-save]')){
+    let videoId=$('#draft-youtube-id').value.trim();
+    if(videoId.includes('://')){const url=new URL(videoId);if(!['youtube.com','www.youtube.com','youtu.be','m.youtube.com'].includes(url.hostname))throw Error('Enter a YouTube URL');videoId=url.hostname==='youtu.be'?url.pathname.slice(1):url.searchParams.get('v')||url.pathname.split('/').at(-1);}
+    await window.ralskies.draftLink({shortId:state.linkingDraft,videoId});state.modal=null;await refreshDrafts();notify('Existing private upload linked.');return true;
+  }
+  if(target.closest('[data-calendar-sync]')){state.calendar=await window.ralskies.calendarSync();render();notify('YouTube calendar synced.');return true;}
+  const month=target.closest('[data-calendar-month]');
+  if(month){const current=state.calendarMonth||new Date(Date.now()+8*3600000).toISOString().slice(0,7),date=new Date(current+'-01T00:00:00Z');date.setUTCMonth(date.getUTCMonth()+Number(month.dataset.calendarMonth));state.calendarMonth=date.toISOString().slice(0,7);render();return true;}
+  return false;
+}
+document.addEventListener('change',event=>{if(event.target.id==='calendar-month'&&event.target.value){state.calendarMonth=event.target.value;render();}});
+
+if(typeof window.ralskies.onDraftChanged==='function')window.ralskies.onDraftChanged(result=>{
+  notify(result.exceptions?'Intake stopped. See Drafts for the logged exception.':result.added+' new draft(s) registered.',result.exceptions?'error':'info');
+  if(!state.modal&&!state.productionBusy)refreshDrafts().catch(error=>notify(error.message,'error'));
+});

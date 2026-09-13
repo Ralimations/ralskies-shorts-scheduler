@@ -10,9 +10,19 @@ export function assertConfirmableDiscovery(discovery, batchId) {
 export async function confirmMatches({ discovery, trackerPath, batchId = "BULK_02" }) {
   assertConfirmableDiscovery(discovery, batchId);
   const matched = discovery.results.filter((result) => result.status === "MATCHED"); if (matched.length !== discovery.expected) throw new Error("Confirmation result count does not match the expected batch count.");
-  const tracker = await openTracker(trackerPath); const values = tracker.queue.getUsedRange().values; const extra = ["match_status", "match_verified_at"]; const missing = extra.filter((header) => !(header in tracker.index));
+  const tracker = await openTracker(trackerPath);
+  if (/^INTAKE-/.test(batchId)) {
+    const claimed = new Set();
+    for (const result of matched) {
+      const candidates = tracker.records.filter(record => record.data.short_id === result.row.short_id && record.data.batch_id === batchId);
+      const row = candidates[0]?.data;
+      if (candidates.length !== 1 || !row || row.youtube_video_id || !['AWAITING_METADATA','BATCH_READY'].includes(row.status) || /DUPLICATE|UNRESOLVED/i.test(row.duplicate_disposition || '') || String(row.file_hash).toUpperCase() !== String(result.hash).toUpperCase() || claimed.has(result.videoId) || tracker.records.some(record => record.data.youtube_video_id === result.videoId)) throw Error('INTAKE_MATCH_STALE_OR_AMBIGUOUS');
+      claimed.add(result.videoId);
+    }
+  }
+  const values = tracker.queue.getUsedRange().values; const extra = ["match_status", "match_verified_at"]; const missing = extra.filter((header) => !(header in tracker.index));
   if (missing.length) { const start = tracker.headers.length; tracker.queue.getRangeByIndexes(0, start, values.length, missing.length).values = [missing, ...Array.from({ length: values.length - 1 }, () => missing.map(() => ""))]; missing.forEach((header, offset) => { tracker.headers.push(header); tracker.index[header] = start + offset; }); }
-  const verifiedAt = new Date().toISOString(); const updates = matched.map((result) => ({ short_id: result.row.short_id, youtube_video_id: result.videoId, batch_id: batchId, match_status: "CONFIRMED", match_verified_at: verifiedAt })); const backupPath = await backupTracker(trackerPath, `match-${Date.now()}`); await updateTrackerRows(tracker, updates); await saveTracker(tracker);
+  const verifiedAt = new Date().toISOString(); const updates = matched.map((result) => ({ short_id: result.row.short_id, youtube_video_id: result.videoId, batch_id: batchId, match_status: "CONFIRMED", match_verified_at: verifiedAt, ...(/^INTAKE-/.test(batchId) ? {status:"PRIVATE_UPLOADED"} : {}) })); const backupPath = await backupTracker(trackerPath, `match-${Date.now()}`); await updateTrackerRows(tracker, updates); await saveTracker(tracker);
   const rows = await readTracker(trackerPath); const verification = updates.map((update) => { const row = rows.find((candidate) => String(candidate.short_id) === String(update.short_id) && String(candidate.batch_id) === batchId); return { shortId: update.short_id, youtubeVideoId: update.youtube_video_id, confirmed: Boolean(row && row.youtube_video_id === update.youtube_video_id && row.match_status === "CONFIRMED" && row.match_verified_at) }; });
   if (verification.some((item) => !item.confirmed)) throw new Error("Tracker confirmation verification failed.");
   return { batchId, state: "MATCHES_CONFIRMED", expected: updates.length, verified: verification.filter((item) => item.confirmed).length, backupPath, verification };

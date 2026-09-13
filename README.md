@@ -155,3 +155,64 @@ node ralskies.mjs report
 Upload and production-apply commands are gated. Use them only when an exact immutable plan has been explicitly approved. For the current manual workflow, perform the YouTube steps above instead.
 
 See `AGENTS.md` for permanent operating rules and `PRD_Ralskies_Content_Engine.md` for the full product specification.
+
+## New Shorts: draft intake and calendar
+
+The **Drafts** screen adds a separate intake route for new videos. Existing BULK batches
+continue to use their original tracker metadata and manifests.
+
+1. Choose a dedicated folder containing finished MP4 Shorts.
+2. Use **Preview Intake** to see the proposed additions without changing files, or
+   **Intake Now** to register them. **Watch Folder** repeats local intake every
+   15 seconds while the app is open; it starts disabled.
+3. Files must be unchanged for at least 10 seconds. Intake calculates SHA-256,
+   copies to `outputs/ralskies-content-engine/hashed/<SHA256>.mp4`, verifies both
+   copies, backs up and saves the tracker, and verifies the saved row before
+   removing the source from the selected draft folder. Original paths remain
+   recorded. A hash already in the tracker is skipped and its row is untouched.
+4. New rows enter an `INTAKE-...` batch with `AWAITING_METADATA`. Their title,
+   description, tags, and category are blank. Use **Metadata** to enter these
+   manually; LLM generation is deferred to phase two.
+5. Open the batch and use **Upload Missing Videos via API**, or manually upload
+   the hashed files and finish saving them as **Private**. Metadata-free intake
+   rows are eligible for private upload, but cannot enter publication.
+6. For manual uploads, use **Find & Match Private Videos**, or **Link Private
+   Upload** on a draft row. Matching requires the complete hash in the original
+   filename or temporary title and an unambiguous YouTube video ID. A YouTube
+   resource etag is never treated as a file hash.
+7. In **Calendar**, use **Sync YouTube** to include existing scheduled and
+   published channel uploads. **Reserve Posting Times** lets you choose a start
+   date, times, and daily or every-other-day posting. Existing reservations,
+   including old batch schedules, are not reassigned. The 20:00–21:00 Manila
+   window is protected; 01:30 needs the optional-slot checkbox.
+8. Once metadata, a private upload, and a future reservation are present, use the
+   batch's **Review Metadata & Schedule** flow. New intake publication checks
+   freshly read YouTube processing status and slot conflicts before applying.
+   YouTube handles release after the schedule is confirmed.
+
+**The watcher performs local intake only.** API uploads and publication retain
+the existing explicit batch review, live-mode and configuration gates. No scans,
+previews, or development tests upload or publish videos. The app must remain
+open for folder watching; YouTube itself handles already confirmed releases.
+
+The calendar distinguishes local reservations, tracker-only historical states,
+and YouTube schedules/publications observed at the displayed last-sync time.
+Untracked channel uploads also occupy slots because the Data API does not expose
+a definitive Shorts flag. Sync again to see changes made outside this app.
+
+Intake journals and exceptions are stored under the existing output directory.
+A failed move keeps the source when possible; uncertain uploads retain their
+YouTube relationship or resumable-session URL and require reconciliation before
+a retry. The watcher stops on intake exceptions, which appear in **Drafts**.
+After a process crash, a remaining `draft-pipeline.lock` requires checking the
+logged exception and journal before removing the stale lock. Never bypass it
+while another writer is active.
+
+Related-video IDs stay in the tracker and are exported to
+`RELATED_VIDEO_MANUAL.csv` for the manual Studio step. API-project audit/private
+restrictions still apply to live uploads.
+
+Development validation uses fixture MP4 bytes, mocked YouTube clients, and
+temporary copies of the tracker. Run `npm test`; the workbook integration test
+skips when no local tracker is available. `RALSKIES_ARTIFACT_TOOL_PATH` can point
+the tracker service to an installed Artifact Tool runtime for validation.
