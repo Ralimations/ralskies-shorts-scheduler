@@ -172,7 +172,7 @@ continue to use their original tracker metadata and manifests.
    recorded. A hash already in the tracker is skipped and its row is untouched.
 4. New rows enter an `INTAKE-...` batch with `AWAITING_METADATA`. Their title,
    description, tags, and category are blank. Use **Metadata** to enter these
-   manually; LLM generation is deferred to phase two.
+   manually, or use the optional reviewed LM Studio suggestions described below.
 5. Open the batch and use **Upload Missing Videos via API**, or manually upload
    the hashed files and finish saving them as **Private**. Metadata-free intake
    rows are eligible for private upload, but cannot enter publication.
@@ -216,3 +216,37 @@ Development validation uses fixture MP4 bytes, mocked YouTube clients, and
 temporary copies of the tracker. Run `npm test`; the workbook integration test
 skips when no local tracker is available. `RALSKIES_ARTIFACT_TOOL_PATH` can point
 the tracker service to an installed Artifact Tool runtime for validation.
+
+## Optional LM Studio metadata suggestions
+
+LM Studio is optional and is never contacted by folder watching, hashing,
+matching, scheduling, retries, or status updates. The pipeline works while
+LM Studio is off. No model is installed, downloaded, or started by this feature.
+
+When you want to use your existing model:
+
+1. Open **Drafts → LM Studio Connection** and enter the local address, port,
+   and protocol used by your LM Studio server. The default is
+   `http://127.0.0.1:1234/v1`.
+2. Leave Model ID blank if the server exposes one model, or enter the ID of
+   the existing model you want to use. **Test Connection** only reads the model
+   list. Saving the connection does not run a model.
+3. Select **Suggest Metadata** on a new draft, supply its song/artist and
+   optional clip notes, then explicitly choose **Generate Suggestions**.
+4. Review a suggestion, edit its missing fields if needed, and choose
+   **Approve & Save to Tracker**. Filled metadata remains read-only and is not
+   replaced. Music category selection is a normal program field.
+5. Continue through the existing private upload and schedule review flow.
+
+Only creative text context is sent to the configured local endpoint. Video
+files, file hashes/paths, scheduling fields, and YouTube credentials are excluded
+from the model prompt. Suggestions are schema-validated and saved separately
+from the tracker; stale reviews cannot overwrite newer tracker edits. Model
+failures leave tracker metadata unchanged and are logged to `exceptions.json`.
+
+If local LM Studio authentication is enabled, set `RALSKIES_LM_API_KEY` in the
+app's environment; it is not stored in the connection settings or model prompt.
+The connection is limited to localhost, 127.0.0.1, or ::1, with your chosen port.
+
+The integration uses LM Studio's [structured output endpoint](https://lmstudio.ai/docs/developer/openai-compat/structured-output)
+and [model listing endpoint](https://lmstudio.ai/docs/developer/openai-compat/models).

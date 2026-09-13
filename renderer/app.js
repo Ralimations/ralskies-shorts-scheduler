@@ -14,7 +14,7 @@ function notify(message,type='success'){
   setTimeout(()=>item.remove(),6000);
 }
 function setModal(title,body,footer=''){state.modal={title,body,footer};render();}
-function closeModal(){if(state.productionBusy){notify('Production is still running. Wait for a completion or error result.','info');return;}state.modal=null;render();}
+function closeModal(){state.metadataGeneration=(state.metadataGeneration||0)+1;if(state.productionBusy){notify('Production is still running. Wait for a completion or error result.','info');return;}state.modal=null;render();}
 function modalHtml(){if(!state.modal)return '';const locked=state.productionBusy;return `<div class="modal-backdrop" ${locked?'':'data-close-modal'}><section class="modal-card" role="dialog" aria-modal="true" aria-label="${esc(state.modal.title)}" data-modal-card><div class="modal-head"><div><p class="eyebrow">WORKFLOW</p><h2>${esc(state.modal.title)}</h2></div>${locked?'':`<button class="icon-button" data-close-modal aria-label="Close">×</button>`}</div><div class="modal-body">${state.modal.body}</div><div class="modal-actions">${state.modal.footer||(locked?'<button class="ghost" disabled>Execution in progress...</button>':'<button class="ghost" data-close-modal>Close</button>')}</div></section></div>`;}
 function selectedBatchRecord(){return state.batches?.batches?.find(batch=>batch.batchId===state.selectedBatch);}
 function workflow(){
@@ -147,6 +147,7 @@ document.addEventListener('click',async event=>{
   if(target.matches('[data-close-modal]')){closeModal();return;}
   try{
     const nav=target.closest('nav button');if(nav){state.view=nav.dataset.view;render();return;}
+    if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-llm-'))){await metadataAction(target);return;}
     if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-draft-')||name.startsWith('data-calendar-'))){await draftAction(target);return;}
     const select=target.closest('[data-select-batch]');if(select){await selectBatch(select.dataset.selectBatch);return;}
     const inspect=target.closest('[data-inspect-batch]');if(inspect){await selectBatch(inspect.dataset.inspectBatch);setModal(`${state.selectedBatch} · Batch Details`,batchDetailBody(state.batchDetail));return;}
@@ -230,3 +231,63 @@ if(typeof window.ralskies.onDraftChanged==='function')window.ralskies.onDraftCha
   notify(result.exceptions?'Intake stopped. See Drafts for the logged exception.':result.added+' new draft(s) registered.',result.exceptions?'error':'info');
   if(!state.modal&&!state.productionBusy)refreshDrafts().catch(error=>notify(error.message,'error'));
 });
+
+function lmConnectionInput(){
+  let host=$('#lm-host').value.trim();if(host==='::1')host='[::1]';
+  const port=$('#lm-port').value.trim();
+  if(!/^\d+$/.test(port)||Number(port)<1||Number(port)>65535)throw Error('Enter a port from 1 to 65535.');
+  return {baseUrl:$('#lm-protocol').value+'://'+host+':'+port+'/v1',model:$('#lm-model').value.trim()};
+}
+async function showLmSettings(){
+  const config=await window.ralskies.metadataSettings(),url=new URL(config.baseUrl);
+  setModal('LM Studio connection',`<p>Connect to the model you already serve in LM Studio.</p><label>Local server address<input id="lm-host" value="${esc(url.hostname)}" placeholder="127.0.0.1"></label><label>Port<input id="lm-port" type="number" min="1" max="65535" value="${esc(url.port||'1234')}"></label><label>Protocol<select id="lm-protocol"><option value="http" ${url.protocol==='http:'?'selected':''}>HTTP</option><option value="https" ${url.protocol==='https:'?'selected':''}>HTTPS</option></select></label><label>Model ID (optional if the server exposes one model)<input id="lm-model" value="${esc(config.model)}" placeholder="Use the model already served by LM Studio"></label><div id="lm-connection-status" class="subtle" role="status">In LM Studio, enable the server in the Developer tab.</div>`,'<button class="ghost" data-close-modal>Close</button><button class="ghost" data-llm-test>Test Connection</button><button class="primary" data-llm-save-settings>Save Connection</button>');
+}
+function showMetadataPrompt(shortId){
+  const row=state.drafts?.rows?.find(item=>item.short_id===shortId);if(!row)throw Error('Draft not found');
+  state.suggestDraftId=shortId;
+  const context=state.metadataContext||{};
+  setModal('Suggest missing metadata',`<p>${esc(row.original_filename||row.file_name)} · ${esc(shortId)}</p><p>Give Qwen the cover details and any useful clip notes. Suggestions stay separate until you review and save them.</p><label>Song name<input id="lm-song" value="${esc(row.source_song||context.song||'')}"></label><label>Original artist / fandom (optional)<input id="lm-artist" value="${esc(row.artist_or_fandom||context.artist||'')}"></label><label>Clip notes<textarea id="lm-notes" rows="3" maxlength="2000" placeholder="For example: the final chorus, soft opening, or dramatic high note"></textarea></label><label>Writing style (optional)<input id="lm-style" maxlength="500" value="${esc(context.style||'Concise, natural, and specific to this cover')}"></label><p>Song details and your notes are sent to your configured local LM Studio server.</p>`,'<button class="ghost" data-close-modal>Cancel</button><button class="ghost" data-llm-settings>Connection Settings</button><button class="primary" data-llm-generate>Generate Suggestions</button>');
+}
+function showMetadataCandidates(){
+  const suggestion=state.metadataSuggestion;
+  setModal('Review metadata suggestions',`<p>Model: ${esc(suggestion.model)}. Only missing metadata will be filled.</p><div class="metadata-candidates">${suggestion.candidates.map((candidate,index)=>`<article class="card"><h3>${esc(candidate.title)}</h3><p class="metadata-description">${esc(candidate.description)}</p><p class="subtle">Tags: ${esc(candidate.tags.join(', '))}</p><button class="primary" data-llm-pick="${index}">Review This Suggestion</button></article>`).join('')}</div>`);
+}
+async function metadataAction(target){
+  if(target.closest('[data-llm-settings]')){await showLmSettings();return;}
+  if(target.closest('[data-llm-test]')){
+    const input=lmConnectionInput(),box=$('#lm-connection-status');box.textContent='Connecting to LM Studio…';
+    try{const models=await window.ralskies.metadataModels(input);box.textContent=models.length?'Connected. Available model IDs: '+models.map(item=>item.id).join(', '):'Connected, but the server exposes no models.';}catch(error){box.textContent=error.message;}
+    return;
+  }
+  if(target.closest('[data-llm-save-settings]')){
+    await window.ralskies.metadataSettingsSave(lmConnectionInput());state.modal=null;render();notify('LM Studio connection saved.');return;
+  }
+  const suggest=target.closest('[data-llm-suggest]');if(suggest){showMetadataPrompt(suggest.dataset.llmSuggest);return;}
+  if(target.closest('[data-llm-generate]')){
+    if(state.llmBusy){notify('A metadata request is still running.','info');return;}
+    const context={song:$('#lm-song').value,artist:$('#lm-artist').value,clipNotes:$('#lm-notes').value,style:$('#lm-style').value};
+    if(!context.song.trim())throw Error('Enter the song name first.');
+    state.metadataContext=context;
+    const requestId=(state.metadataGeneration||0)+1;state.metadataGeneration=requestId;state.llmBusy=true;
+    setModal('Generating metadata suggestions','<p>Your local model is writing suggestions. This can take up to two minutes.</p><p>No tracker metadata is changed by generation.</p>');
+    try{
+      const suggestion=await window.ralskies.metadataGenerate({shortId:state.suggestDraftId,context});
+      if(state.metadataGeneration===requestId){state.metadataSuggestion=suggestion;showMetadataCandidates();}
+    }catch(error){if(state.metadataGeneration===requestId){state.modal=null;render();notify(error.message,'error');}}
+    finally{state.llmBusy=false;}
+    return;
+  }
+  const pick=target.closest('[data-llm-pick]');
+  if(pick){
+    const suggestion=state.metadataSuggestion,index=Number(pick.dataset.llmPick),candidate=suggestion.candidates[index],row=state.drafts.rows.find(item=>item.short_id===suggestion.shortId);
+    state.metadataCandidateIndex=index;
+    const fields={public_title:row.public_title||candidate.title,description:row.description||candidate.description,youtube_tags:row.youtube_tags||candidate.tags.join(', ')};
+    setModal('Approve draft metadata',`<p>Review or edit the missing fields before saving. Existing metadata is shown read-only.</p><label>Title<input id="lm-review-public_title" maxlength="100" value="${esc(fields.public_title)}" ${suggestion.missingFields.includes('public_title')?'':'readonly'}></label><label>Description<textarea id="lm-review-description" rows="6" maxlength="5000" ${suggestion.missingFields.includes('description')?'':'readonly'}>${esc(fields.description)}</textarea></label><label>Tags<input id="lm-review-youtube_tags" value="${esc(fields.youtube_tags)}" ${suggestion.missingFields.includes('youtube_tags')?'':'readonly'}></label><label>Category<select id="lm-review-category" ${row.category?'disabled':''}><option value="Music">Music</option></select></label><p>Song: ${esc(row.source_song||suggestion.context.song)}. Artist / fandom: ${esc(row.artist_or_fandom||suggestion.context.artist||'Not supplied')}.</p>`,'<button class="ghost" data-llm-back>Other Suggestions</button><button class="primary" data-llm-approve>Approve &amp; Save to Tracker</button>');return;
+  }
+  if(target.closest('[data-llm-back]')){showMetadataCandidates();return;}
+  if(target.closest('[data-llm-approve]')){
+    const suggestion=state.metadataSuggestion,edits=Object.fromEntries(suggestion.missingFields.map(key=>[key,$('#lm-review-'+key).value]));
+    await window.ralskies.metadataApprove({id:suggestion.id,candidateIndex:state.metadataCandidateIndex,edits,category:$('#lm-review-category').value,approved:true});
+    state.modal=null;await refreshDrafts();notify('Approved metadata saved to this draft.');return;
+  }
+}

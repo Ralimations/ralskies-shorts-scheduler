@@ -52,8 +52,7 @@ export async function trackerRepository(trackerPath) {
     }
   };
 }
-export async function scanDrafts({ draftFolder, hashedFolder, outputDir, repository, dryRun = true, now = Date.now(), stableMs = 10000 }) {
-  const scan = async () => {
+export async function validateDraftFolders(draftFolder,hashedFolder) {
     const draftRoot = await fs.realpath(draftFolder);
     // Validate both resolved roots before any file move.
     const parent = await fs.realpath(path.dirname(hashedFolder));
@@ -61,6 +60,11 @@ export async function scanDrafts({ draftFolder, hashedFolder, outputDir, reposit
     if (draftRoot.toLowerCase() === hashRoot.toLowerCase() || inside(draftRoot, hashRoot) || inside(hashRoot, draftRoot)) throw Error('DRAFT_AND_HASH_FOLDERS_MUST_BE_SEPARATE');
     try { if ((await fs.lstat(hashRoot)).isSymbolicLink() || await fs.realpath(hashRoot) !== hashRoot) throw Error('HASH_FOLDER_MUST_NOT_BE_A_LINK'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return {draftRoot,hashRoot};
+}
+export async function scanDrafts({ draftFolder, hashedFolder, outputDir, repository, dryRun = true, now = Date.now(), stableMs = 10000 }) {
+  const scan = async () => {
+    const {draftRoot,hashRoot}=await validateDraftFolders(draftFolder,hashedFolder);
     const rows = await repository.read(), known = new Set(rows.map(row => clean(row.file_hash).toUpperCase()));
     const shortIds = new Set(rows.map(row => clean(row.short_id)));
     const batchId = 'INTAKE-' + new Date(now).toISOString().replace(/[-:.TZ]/g,'') + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();

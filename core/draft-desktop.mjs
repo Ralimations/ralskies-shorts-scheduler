@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readTracker } from './tracker-service.mjs';
 import { buildIntakeBatch, loadExistingBatch } from './existing-batch-service.mjs';
-import { trackerRepository, scanDrafts, saveDraftMetadata, isIntake, editableDraft, exportRelatedVideoActions } from './draft-intake.mjs';
+import { trackerRepository, scanDrafts, validateDraftFolders, saveDraftMetadata, isIntake, editableDraft, exportRelatedVideoActions } from './draft-intake.mjs';
 import { readJson, writeJson, recordException, withPipelineLock } from './pipeline-store.mjs';
 import { calendarEvents, planReservations, assertScheduleAvailable, DEFAULT_SLOTS } from './schedule-calendar.mjs';
 import { createYouTubeRealClient, loadYouTubeConfig } from './youtube-real-client.mjs';
@@ -47,7 +47,7 @@ export async function validateIntakeProduction({ rows, plan, outputDir }) {
     assertScheduleAvailable(rows,row,snapshot);
   }
 }
-export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProductionBusy = () => false, onScan = () => {} }) {
+export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProductionBusy = () => false, onScan = () => {}, startTimer = setInterval, stopTimer = clearInterval }) {
   const configPath = path.join(outputDir,'draft-settings.json'), snapshotPath = path.join(outputDir,'youtube-calendar.json');
   let busy = false, timer;
   const defaults = { enabled: false, draftFolder: '', hashedFolder: path.join(outputDir,'hashed'), slots: DEFAULT_SLOTS, cadence: 'daily', optionalSlot: false };
@@ -77,10 +77,10 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
       if (!(await fs.stat(folder)).isDirectory()) throw Error('DRAFT_FOLDER_REQUIRED');
       config.draftFolder=folder;
     }
-    if (!config.draftFolder) throw Error('SELECT_DRAFT_FOLDER');
+    if (!config.draftFolder && config.enabled) throw Error('SELECT_DRAFT_FOLDER');
     await fs.mkdir(outputDir,{recursive:true});
-    // Preview validates path separation before a watcher can mutate files.
-    await scanDrafts({ ...config, outputDir, repository: await repository(), dryRun:true });
+    // Stopping must work even when a removable drive or draft folder is gone.
+    if(config.enabled || input.draftFolder !== undefined)await validateDraftFolders(config.draftFolder,config.hashedFolder);
     await writeJson(configPath,config); return config;
   }));
   ipcMain.handle('engine:draft-scan',(_event,p={})=>scan(p.dryRun !== false));
@@ -131,8 +131,8 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
       const config=await settings();await writeJson(configPath,{...config,enabled:false});
     }
   };
-  timer=setInterval(()=>{tick().catch(()=>{});},15000);timer.unref?.();
-  return { stop:()=>clearInterval(timer), isBusy:()=>busy };
+  timer=startTimer(()=>tick().catch(()=>{}),15000);timer.unref?.();
+  return { stop:()=>stopTimer(timer), isBusy:()=>busy };
 }
 
 export async function discoverIntakeBatch({batchId,trackerPath,outputDir}) {

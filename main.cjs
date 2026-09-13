@@ -9,7 +9,7 @@ const SETTINGS = path.join(OUT, 'desktop_settings.json');
 const BATCH_TRANSACTION = path.join(OUT, 'bulk_preparation_transaction.json');
 const TRACKER = path.join(OUT, 'Ralskies_Upload_Tracker.xlsx');
 let draftDesktop, trackerMutationBusy=false;
-const mutatingHandlers=new Set(['engine:apply-private-upload','engine:confirm-matches','engine:finalize-recovery','engine:apply-production','engine:approve-title','engine:keep-title']);
+const mutatingHandlers=new Set(['engine:apply-private-upload','engine:confirm-matches','engine:finalize-recovery','engine:apply-production','engine:approve-title','engine:keep-title','engine:metadata-approve']);
 const registerHandler=ipcMain.handle.bind(ipcMain);
 ipcMain.handle=(name,handler)=>registerHandler(name,async(...args)=>{
   if(!mutatingHandlers.has(name))return handler(...args);
@@ -103,7 +103,7 @@ ipcMain.handle('engine:save-settings',(_e,settings)=>{fs.mkdirSync(OUT,{recursiv
 ipcMain.handle('engine:choose-folder',()=>dialog.showOpenDialogSync({properties:['openDirectory']})?.[0]||null);
 ipcMain.handle('engine:dry-run',(_e,action)=>({action,dryRun:true,message:'No files, tracker rows, or YouTube resources were modified.'}));
 function createWindow(){const win=new BrowserWindow({width:1440,height:930,minWidth:1100,minHeight:700,backgroundColor:'#0b1020',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false}});win.loadFile(path.join(__dirname,'renderer','index.html'))}
-app.whenReady().then(async()=>{const {registerDraftDesktop}=await import('./core/draft-desktop.mjs');draftDesktop=registerDraftDesktop({ipcMain,outputDir:OUT,trackerPath:TRACKER,isProductionBusy:()=>trackerMutationBusy,onScan:payload=>{for(const win of BrowserWindow.getAllWindows()){if(!win.isDestroyed())win.webContents.send('engine:draft-changed',payload);}}});createWindow();app.on('activate',()=>{if(!BrowserWindow.getAllWindows().length)createWindow()})}); app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit()});
+app.whenReady().then(async()=>{const {registerDraftDesktop}=await import('./core/draft-desktop.mjs');draftDesktop=registerDraftDesktop({ipcMain,outputDir:OUT,trackerPath:TRACKER,isProductionBusy:()=>trackerMutationBusy,onScan:payload=>{for(const win of BrowserWindow.getAllWindows()){if(!win.isDestroyed())win.webContents.send('engine:draft-changed',payload);}}});const {registerMetadataDesktop}=await import('./core/metadata-suggestions.mjs');const {trackerRepository}=await import('./core/draft-intake.mjs');registerMetadataDesktop({ipcMain,outputDir:OUT,repository:await trackerRepository(TRACKER),isProductionBusy:()=>draftDesktop.isBusy()});createWindow();app.on('activate',()=>{if(!BrowserWindow.getAllWindows().length)createWindow()})}); app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit()});
 
 
 
