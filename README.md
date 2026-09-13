@@ -255,3 +255,15 @@ YouTube metadata verification polls with reads only for about two minutes after
 a successful update, allowing delayed tag readback to settle. It does not repeat
 the update. If verification still fails, reconcile the persisted execution before
 creating a new plan for the remaining rows.
+
+### Title requirements for existing batches and local suggestions
+
+Every production plan validates all titles before any remote write: titles must
+be nonempty, at most 100 characters including spaces and hashtags, and contain
+no angle brackets. Invalid titles appear as review blockers. Titles are checked
+again on the final API payload. No automatic truncation changes approved text.
+
+The local model is instructed to aim for 90 characters, use natural wording
+about the supplied song or cover moment, avoid unsupported claims and generic
+clickbait, and use at most two optional title hashtags. Extra hashtags belong
+in the description. Generated text must still pass validation and human review.

@@ -47,7 +47,8 @@ ipcMain.handle('engine:production-review',async(_e,batchId='BULK_03')=>{
   const {loadYouTubeConfig,createYouTubeRealClient}=await import('./core/youtube-real-client.mjs');
   const batch=await loadExistingBatch({batchId,transactionPath:BATCH_TRANSACTION,outputDir:OUT,trackerPath:TRACKER});
   const model=buildProductionReview({batchId,rows:batch.trackerRows,manifestRows:batch.manifest.rows});
-  const config=await loadYouTubeConfig(),client=createYouTubeRealClient({config}),remoteBlockers=[],remoteById=new Map();
+  const {planTitleIssues}=await import('./core/youtube-title-validation.mjs');
+  const config=await loadYouTubeConfig(),client=createYouTubeRealClient({config}),remoteBlockers=planTitleIssues(model.plan),remoteById=new Map();
   for(const row of model.rows.filter(item=>item.productionEligibility==='READY')){
     const remote=await client.videos.list(row.youtubeId);
     remoteById.set(row.youtubeId,remote);
@@ -75,6 +76,8 @@ ipcMain.handle('engine:apply-production',async(event,p)=>{
   try{
     const rows=await readTracker(TRACKER);
     try{assertExecutionPlanCurrent(plan,rows);}catch(error){return {ok:false,code:'PLAN_STALE',message:error.message};}
+    const {assertPlanTitles}=await import('./core/youtube-title-validation.mjs');
+    try{assertPlanTitles(plan);}catch(error){return {ok:false,code:'INVALID_VIDEO_TITLES',message:error.message};}
     const {loadYouTubeConfig,createYouTubeRealClient}=await import('./core/youtube-real-client.mjs');
     const {createRealAdapter,armRealPlan}=await import('./core/youtube-adapter.mjs');
     const config=await loadYouTubeConfig(),client=createYouTubeRealClient({config});
