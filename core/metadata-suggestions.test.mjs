@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {localEndpoint,listLocalModels,generateMetadataSuggestions,saveSuggestion,approveMetadataSuggestion} from './metadata-suggestions.mjs';
+import {metadataTimeoutSeconds,localEndpoint,listLocalModels,generateMetadataSuggestions,saveSuggestion,approveMetadataSuggestion} from './metadata-suggestions.mjs';
 
 const row=()=>({short_id:'RS-NEW',batch_id:'INTAKE-NEW',file_hash:'A'.repeat(64),status:'AWAITING_METADATA',source_song:'',artist_or_fandom:'',category:'',public_title:'',description:'',youtube_tags:'',related_video_id:'abcDEF_1234',file_path:'G:/PRIVATE/clip.mp4',scheduled_date:'2027-09-14',scheduled_time:'17:30',schedule_eligible:'YES'});
 const candidate={title:'A quiet take on the final chorus',description:'My cover of Example Song. A softer final chorus.',tags:['cover','Example Song','music']};
@@ -66,4 +66,12 @@ test('a changed tracker invalidates a pending suggestion and never overwrites th
   let writes=0;const repository={read:async()=>[draft],commit:async()=>{writes++;}};
   await assert.rejects(approveMetadataSuggestion({outputDir:root,repository,id:suggestion.id,candidateIndex:0,approved:true}),/STALE/);
   assert.equal(writes,0);assert.equal(draft.description,'Edited after generation');
+});
+
+test('generation timeout has a bounded configurable allowance for slower local models',async()=>{
+  assert.equal(metadataTimeoutSeconds(),300);assert.equal(metadataTimeoutSeconds('600'),600);
+  for(const value of [0,29,601,Infinity,'',1.5])assert.throws(()=>metadataTimeoutSeconds(value),/TIMEOUT/);
+  let calls=0;
+  await assert.rejects(generateMetadataSuggestions({row:row(),context:{song:'Example Song'},model:'qwen',timeoutSeconds:0,fetchImpl:async()=>{calls++;}}),/TIMEOUT/);
+  assert.equal(calls,0);
 });

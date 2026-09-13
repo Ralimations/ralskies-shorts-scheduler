@@ -25,7 +25,7 @@ test('LM Studio stays idle until requested; address/port settings and review app
   window.document.querySelector('#lm-port').value='4321';
   window.document.querySelector('[data-llm-test]').click();await settle();assert.equal(models,1);assert.equal(generated,0);
   window.document.querySelector('[data-llm-save-settings]').click();await settle();
-  assert.equal(savedConfig.baseUrl,'http://127.0.0.1:4321/v1');assert.equal(savedConfig.model,'');
+  assert.equal(savedConfig.baseUrl,'http://127.0.0.1:4321/v1');assert.equal(savedConfig.model,'');assert.equal(savedConfig.timeoutSeconds,300);
   window.document.querySelector('[data-llm-suggest]').click();await settle();
   window.document.querySelector('[data-llm-generate]').click();await settle();
   assert.equal(generated,1);assert.equal(approved,0);assert.match(window.document.querySelector('#modal-root').textContent,/Review metadata suggestions/);

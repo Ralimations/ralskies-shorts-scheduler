@@ -236,11 +236,11 @@ function lmConnectionInput(){
   let host=$('#lm-host').value.trim();if(host==='::1')host='[::1]';
   const port=$('#lm-port').value.trim();
   if(!/^\d+$/.test(port)||Number(port)<1||Number(port)>65535)throw Error('Enter a port from 1 to 65535.');
-  return {baseUrl:$('#lm-protocol').value+'://'+host+':'+port+'/v1',model:$('#lm-model').value.trim()};
+  return {baseUrl:$('#lm-protocol').value+'://'+host+':'+port+'/v1',model:$('#lm-model').value.trim(),timeoutSeconds:Number($('#lm-timeout').value)};
 }
 async function showLmSettings(){
   const config=await window.ralskies.metadataSettings(),url=new URL(config.baseUrl);
-  setModal('LM Studio connection',`<p>Connect to the model you already serve in LM Studio.</p><label>Local server address<input id="lm-host" value="${esc(url.hostname)}" placeholder="127.0.0.1"></label><label>Port<input id="lm-port" type="number" min="1" max="65535" value="${esc(url.port||'1234')}"></label><label>Protocol<select id="lm-protocol"><option value="http" ${url.protocol==='http:'?'selected':''}>HTTP</option><option value="https" ${url.protocol==='https:'?'selected':''}>HTTPS</option></select></label><label>Model ID (optional if the server exposes one model)<input id="lm-model" value="${esc(config.model)}" placeholder="Use the model already served by LM Studio"></label><div id="lm-connection-status" class="subtle" role="status">In LM Studio, enable the server in the Developer tab.</div>`,'<button class="ghost" data-close-modal>Close</button><button class="ghost" data-llm-test>Test Connection</button><button class="primary" data-llm-save-settings>Save Connection</button>');
+  setModal('LM Studio connection',`<p>Connect to the model you already serve in LM Studio.</p><label>Local server address<input id="lm-host" value="${esc(url.hostname)}" placeholder="127.0.0.1"></label><label>Port<input id="lm-port" type="number" min="1" max="65535" value="${esc(url.port||'1234')}"></label><label>Protocol<select id="lm-protocol"><option value="http" ${url.protocol==='http:'?'selected':''}>HTTP</option><option value="https" ${url.protocol==='https:'?'selected':''}>HTTPS</option></select></label><label>Model ID (optional if the server exposes one model)<input id="lm-model" value="${esc(config.model)}" placeholder="Use the model already served by LM Studio"></label><label>Generation timeout (seconds)<input id="lm-timeout" type="number" min="30" max="600" value="${esc(config.timeoutSeconds||300)}"></label><div id="lm-connection-status" class="subtle" role="status">In LM Studio, enable the server in the Developer tab.</div>`,'<button class="ghost" data-close-modal>Close</button><button class="ghost" data-llm-test>Test Connection</button><button class="primary" data-llm-save-settings>Save Connection</button>');
 }
 function showMetadataPrompt(shortId){
   const row=state.drafts?.rows?.find(item=>item.short_id===shortId);if(!row)throw Error('Draft not found');
@@ -269,7 +269,7 @@ async function metadataAction(target){
     if(!context.song.trim())throw Error('Enter the song name first.');
     state.metadataContext=context;
     const requestId=(state.metadataGeneration||0)+1;state.metadataGeneration=requestId;state.llmBusy=true;
-    setModal('Generating metadata suggestions','<p>Your local model is writing suggestions. This can take up to two minutes.</p><p>No tracker metadata is changed by generation.</p>');
+    setModal('Generating metadata suggestions','<p>Your local model is writing suggestions. This may take several minutes, depending on your model and configured timeout.</p><p>No tracker metadata is changed by generation.</p>');
     try{
       const suggestion=await window.ralskies.metadataGenerate({shortId:state.suggestDraftId,context});
       if(state.metadataGeneration===requestId){state.metadataSuggestion=suggestion;showMetadataCandidates();}

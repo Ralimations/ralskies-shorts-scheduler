@@ -226,8 +226,8 @@ LM Studio is off. No model is installed, downloaded, or started by this feature.
 When you want to use your existing model:
 
 1. Open **Drafts → LM Studio Connection** and enter the local address, port,
-   and protocol used by your LM Studio server. The default is
-   `http://127.0.0.1:1234/v1`.
+   protocol, and generation timeout used by your LM Studio server. The default is
+   `http://127.0.0.1:1234/v1`, with a five-minute generation timeout (adjustable from 30 to 600 seconds).
 2. Leave Model ID blank if the server exposes one model, or enter the ID of
    the existing model you want to use. **Test Connection** only reads the model
    list. Saving the connection does not run a model.
