@@ -22,20 +22,28 @@ export function calendarEvents(rows, snapshot = {}) {
   const remote = new Map((snapshot.videos || []).map(video => [video.id, video])), events = [];
   const represented = new Set();
   for (const row of rows) {
-    const video = remote.get(clean(row.youtube_video_id)), localAt = utcPublishAt(row);
+    const status=clean(row.status).toUpperCase();
+    if(/DUPLICATE|UNRESOLVED/.test(status+' '+clean(row.duplicate_disposition).toUpperCase()))continue;
+    const youtubeId=clean(row.youtube_video_id);
+    if(youtubeId&&represented.has(youtubeId))continue;
+    const complete=['PUBLISHED','SCHEDULED','COMPLETE'].includes(status);
+    const stale=complete&&Date.parse(row.verification_timestamp)>Date.parse(snapshot.syncedAt);
+    const video=stale?null:remote.get(youtubeId),localAt=utcPublishAt(row);
+    if(youtubeId)represented.add(youtubeId);
     const base = { shortId: row.short_id, batchId: row.batch_id, youtubeId: clean(row.youtube_video_id), title: clean(row.public_title) || clean(row.original_filename) || clean(row.file_name) || row.short_id, trackerStatus: row.status, isTracked: true };
     if (video) {
       represented.add(video.id);
       const published = video.status?.privacyStatus === 'public';
       const actualAt = published ? video.snippet?.publishedAt : video.status?.publishAt;
       if (actualAt) events.push({ ...base, at: actualAt, pht: pht(actualAt), state: published ? 'PUBLISHED' : 'YOUTUBE_SCHEDULED', source: 'YOUTUBE', observedAt: snapshot.syncedAt });
-      if (localAt && (!actualAt || Date.parse(actualAt) !== Date.parse(localAt))) events.push({ ...base, at: localAt, pht: pht(localAt), state: 'RESERVATION_CONFLICT', source: 'TRACKER' });
+      if (localAt && !complete && (!actualAt || Date.parse(actualAt) !== Date.parse(localAt))) events.push({ ...base, at: localAt, pht: pht(localAt), state: 'RESERVATION_CONFLICT', source: 'TRACKER' });
+      if(!actualAt&&complete&&localAt)events.push({...base,at:localAt,pht:pht(localAt),state:'TRACKER_'+status,source:'TRACKER'});
     } else if (localAt) {
-      events.push({ ...base, at: localAt, pht: pht(localAt), state: ['PUBLISHED','SCHEDULED'].includes(clean(row.status).toUpperCase()) ? 'TRACKER_' + clean(row.status).toUpperCase() : 'RESERVED', source: 'TRACKER' });
+      events.push({ ...base, at: localAt, pht: pht(localAt), state: complete ? 'TRACKER_' + clean(row.status).toUpperCase() : 'RESERVED', source: 'TRACKER' });
     }
   }
   // Include all channel uploads as occupied times. The API does not expose an isShort flag.
-  for (const video of snapshot.videos || []) {
+  for (const video of remote.values()) {
     if (represented.has(video.id)) continue;
     const published = video.status?.privacyStatus === 'public', at = published ? video.snippet?.publishedAt : video.status?.publishAt;
     if (at) events.push({ youtubeId: video.id, title: video.snippet?.title || video.id, at, pht: pht(at), state: published ? 'PUBLISHED' : 'YOUTUBE_SCHEDULED', source: 'YOUTUBE', isTracked: false, observedAt: snapshot.syncedAt });

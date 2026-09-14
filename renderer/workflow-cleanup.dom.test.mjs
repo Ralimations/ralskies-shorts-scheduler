@@ -10,3 +10,13 @@ test('five-screen navigation, saved reservation defaults, and historical log pag
  w.document.querySelector('[data-view="logs"]').click();await settle();assert.match(w.document.querySelector('#view').textContent,/Saved event 0/);assert.doesNotMatch(w.document.querySelector('#view').textContent,/Saved event 100/);w.document.querySelector('[data-history-page="1"]').click();assert.match(w.document.querySelector('#view').textContent,/Saved event 100/);
  dom.window.close();
 });
+
+test('completed batches are hidden by default and can be opened in upload history',async()=>{
+ const dom=new JSDOM(await fs.readFile(new URL('./index.html',import.meta.url),'utf8'),{runScripts:'outside-only'}),w=dom.window;
+ const detail={readiness:[{tracker:{status:'SCHEDULED',short_id:'RS-1'},productionEligibility:'BLOCKED'}]};
+ w.ralskies={calendar:async()=>({events:[]}),batches:async()=>({batches:[{batchId:'BULK_DONE',detail}]}),titleReviewQueue:async()=>[],recoveryJournals:async()=>[],settings:async()=>({}),draftStatus:async()=>({settings:{},rows:[]})};
+ w.eval((await Promise.all(['draft-views.js','app.js'].map(f=>fs.readFile(new URL(f,import.meta.url),'utf8')))).join('\n'));await new Promise(r=>setTimeout(r,0));
+ w.document.querySelector('[data-view="batches"]').click();assert.match(w.document.querySelector('#view').textContent,/No active batches/);assert.equal(w.document.querySelector('[data-select-batch]'),null);
+ w.document.querySelector('[data-toggle-upload-history]').click();assert.equal(w.document.querySelector('[data-select-batch]').dataset.selectBatch,'BULK_DONE');
+ w.document.querySelector('[data-toggle-upload-history]').click();assert.equal(w.document.querySelector('[data-select-batch]'),null);assert.match(w.document.querySelector('#view').textContent,/No active batches/);dom.window.close();
+});
