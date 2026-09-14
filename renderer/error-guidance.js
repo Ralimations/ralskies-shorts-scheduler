@@ -1,6 +1,8 @@
 (function(global){
  function describe(message){
   const text=String(message||'');
+  if(/INVALID_OR_PROTECTED_PUBLISH_TIME|SCHEDULE_SLOT_OCCUPIED/.test(text))return 'Open Drafts and validate a release window before generating metadata. Select a future, conflict-free reservation.';
+  if(/ANALYTICS_AUTH_REQUIRED/.test(text))return 'Reconnect using node phase2/youtube_phase2.mjs auth to grant read-only YouTube Analytics access.';
   if(/invalid_grant/i.test(text))return 'Reconnect your Google account: run node phase2/youtube_phase2.mjs auth from the desktop folder, complete sign-in, then check the existing uploads again.';
   if(/REAL_PRODUCTION_EXECUTION_DISABLED/.test(text))return 'Close the app and restart with npm run start:live. This request did not start a YouTube write.';
   if(/invalid.*title|TITLE_EMPTY|TITLE_TOO_LONG|TITLE_CONTAINS/i.test(text))return 'Open Batches → Check Metadata. Edit the title to 1–100 characters, including spaces and hashtags, with no < or >. Save it and build a fresh production review.';

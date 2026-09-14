@@ -6,7 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {registerDraftDesktop} from './draft-desktop.mjs';
 import {readTracker} from './tracker-service.mjs';
-import {writeJson} from './pipeline-store.mjs';
+import {writeJson,readJson} from './pipeline-store.mjs';
 const source=path.resolve('outputs/ralskies-content-engine/Ralskies_Upload_Tracker.xlsx');
 const available=await fs.access(source).then(()=>true,()=>false);
 test('desktop watcher, metadata form, stale reservation guard, calendar and stop control work through IPC on a disposable tracker',{skip:!available},async t=>{
@@ -14,7 +14,7 @@ test('desktop watcher, metadata form, stale reservation guard, calendar and stop
   await fs.mkdir(outputDir);await fs.mkdir(draftFolder);await fs.copyFile(source,trackerPath);
   const digest=async file=>crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex'),sourceHash=await digest(source);
   const originalRows=await readTracker(trackerPath),handlers=new Map(),notifications=[];let poll,productionBusy=false;
-  const service=registerDraftDesktop({ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},outputDir,trackerPath,isProductionBusy:()=>productionBusy,onScan:result=>notifications.push(result),startTimer:fn=>{poll=fn;return {};},stopTimer:()=>{}});
+  const service=registerDraftDesktop({ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},outputDir,trackerPath,syncCalendar:()=>readJson(path.join(outputDir,'youtube-calendar.json'),{}),isProductionBusy:()=>productionBusy,onScan:result=>notifications.push(result),startTimer:fn=>{poll=fn;return {};},stopTimer:()=>{}});
   t.after(()=>service.stop());
   const call=(name,p)=>handlers.get('engine:'+name)(null,p);
   await call('draft-configure',{draftFolder,enabled:true});

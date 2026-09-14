@@ -47,7 +47,7 @@ export async function validateIntakeProduction({ rows, plan, outputDir }) {
     assertScheduleAvailable(rows,row,snapshot);
   }
 }
-export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProductionBusy = () => false, onScan = () => {}, startTimer = setInterval, stopTimer = clearInterval }) {
+export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProductionBusy = () => false, onScan = () => {}, startTimer = setInterval, stopTimer = clearInterval, syncCalendar = syncChannelCalendar }) {
   const configPath = path.join(outputDir,'draft-settings.json'), snapshotPath = path.join(outputDir,'youtube-calendar.json');
   let busy = false, timer;
   const defaults = { enabled: false, draftFolder: '', hashedFolder: path.join(outputDir,'hashed'), slots: DEFAULT_SLOTS, cadence: 'daily', optionalSlot: false };
@@ -89,7 +89,7 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
     await exportRelatedVideoActions({ rows:await repo.read(), outputDir }); return result;
   })));
   ipcMain.handle('engine:draft-reserve-preview',(_event,p)=>guard(async()=>{
-    const snapshot=await readJson(snapshotPath,{});
+    const snapshot=await syncCalendar(outputDir);
     return planReservations({ ...p, rows:await readTracker(trackerPath), snapshot });
   }, {record:false}));
   ipcMain.handle('engine:draft-reserve',(_event,p)=>guard(()=>withPipelineLock(outputDir,async()=>{
@@ -102,7 +102,7 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
     if(matches.length!==1||!editableDraft(matches[0])||matches[0].youtube_video_id)throw Error('DRAFT_NOT_LINKABLE');
     const row=matches[0],videoId=clean(p.videoId);
     if(!/^[A-Za-z0-9_-]{11}$/.test(videoId)||rows.some(item=>item.youtube_video_id===videoId))throw Error('YOUTUBE_ID_INVALID_OR_ALREADY_LINKED');
-    const snapshot=await syncChannelCalendar(outputDir),video=snapshot.videos.find(item=>item.id===videoId);
+    const snapshot=await syncCalendar(outputDir),video=snapshot.videos.find(item=>item.id===videoId);
     if(!video||video.status?.privacyStatus!=='private'||video.status.publishAt||!remoteMatchesHash(video,row.file_hash))throw Error('PRIVATE_HASH_MATCH_REQUIRED');
     const candidates=snapshot.videos.filter(item=>item.status?.privacyStatus==='private'&&remoteMatchesHash(item,row.file_hash));
     if(candidates.length!==1)throw Error('AMBIGUOUS_REMOTE_HASH');
@@ -111,7 +111,7 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
   })));
   ipcMain.handle('engine:calendar',async()=>({ events:calendarEvents(await readTracker(trackerPath),await readJson(snapshotPath,{})), syncedAt:(await readJson(snapshotPath,{})).syncedAt||null }));
   ipcMain.handle('engine:calendar-sync',()=>guard(async()=>{
-    const snapshot=await syncChannelCalendar(outputDir);
+    const snapshot=await syncCalendar(outputDir);
     return {events:calendarEvents(await readTracker(trackerPath),snapshot),syncedAt:snapshot.syncedAt};
   }));
   // The watcher owns local intake only. Network writes retain the existing live-mode
@@ -138,7 +138,7 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
 export async function discoverIntakeBatch({batchId,trackerPath,outputDir}) {
   const {matchPrivateVideos,normalizeHashTitle}=await import('./youtube-matching.mjs');
   const rows=await readTracker(trackerPath),selected=rows.filter(row=>row.batch_id===batchId&&editableDraft(row)&&!row.youtube_video_id);
-  const snapshot=await syncChannelCalendar(outputDir);
+  const snapshot=await syncCalendar(outputDir);
   const videos=snapshot.videos.filter(video=>video.status?.privacyStatus==='private'&&!video.status.publishAt).map(video=>({
     id:video.id,title:normalizeHashTitle(video.snippet?.title)||normalizeHashTitle(video.fileDetails?.fileName)||video.snippet?.title||'',privacyStatus:'private'
   }));

@@ -6,7 +6,7 @@ const html=await fs.readFile(new URL('./index.html',import.meta.url),'utf8'),app
 test('LM Studio stays idle until requested; address/port settings and review approval are explicit UI actions',async()=>{
   const dom=new JSDOM(html,{runScripts:'outside-only'}),{window}=dom;
   let generated=0,approved=0,models=0,savedConfig;
-  const row={short_id:'RS-NEW',batch_id:'INTAKE-NEW',status:'AWAITING_METADATA',file_name:'new.mp4',source_song:'Example Song',public_title:'Already approved title'};
+  const row={short_id:'RS-NEW',batch_id:'INTAKE-NEW',status:'AWAITING_METADATA',scheduled_date:'2035-01-01',scheduled_time:'22:00',file_name:'new.mp4',source_song:'Example Song',public_title:'Already approved title'};
   const suggestion={id:'12345678-1234-1234-1234-123456789012',shortId:row.short_id,model:'existing-qwen',missingFields:['description','youtube_tags'],context:{song:'Example Song',artist:'Original Artist'},candidates:[{title:'Model alternative',description:'Suggested cover description',tags:['cover','music']}]};
   window.ralskies={
     inventory:async()=>({files:[]}),calendar:async()=>({events:[]}),batches:async()=>({batches:[]}),titleReviewQueue:async()=>[],recoveryJournals:async()=>[],settings:async()=>({slots:['17:30','22:30']}),

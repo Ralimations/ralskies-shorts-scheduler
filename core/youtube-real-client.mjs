@@ -7,6 +7,13 @@ async function accessToken(config,fetchImpl=fetch){const token=await readJson(pa
 async function parse(response){const text=await response.text();let body={};try{body=text?JSON.parse(text):{};}catch{}if(!response.ok)throw Error(`YouTube API ${response.status}: ${body.error?.message||text.slice(0,300)}`);return body;}
 async function api(config,url,options={},fetchImpl=fetch,tokenProvider=()=>accessToken(config,fetchImpl)){const headers={...(options.headers||{}),Authorization:`Bearer ${await tokenProvider()}`};if(options.body&&typeof options.body==='string'&&!headers['Content-Type'])headers['Content-Type']='application/json';return parse(await fetchImpl(url,{...options,headers}));}
 export function createYouTubeRealClient({config,fetchImpl=fetch,tokenProvider}={}){if(!config)throw Error('YOUTUBE_CONFIG_REQUIRED');const token=tokenProvider||(()=>accessToken(config,fetchImpl));return {
+  analytics:{async report({startDate,endDate,videoIds}){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(startDate)||!/^\d{4}-\d{2}-\d{2}$/.test(endDate)||!Array.isArray(videoIds)||!videoIds.length||videoIds.length>500||videoIds.some(id=>!/^[A-Za-z0-9_-]{11}$/.test(id)))throw Error('INVALID_ANALYTICS_QUERY');
+    const q=new URLSearchParams({ids:'channel==MINE',startDate,endDate,dimensions:'video',metrics:'views,estimatedMinutesWatched,averageViewDuration,likes,comments,shares,subscribersGained',filters:'video=='+videoIds.join(','),sort:'-views',maxResults:'200'});
+    const rows=[];let first;
+    for(let startIndex=1;;startIndex+=200){q.set('startIndex',String(startIndex));const page=await api(config,'https://youtubeanalytics.googleapis.com/v2/reports?'+q,{},fetchImpl,token);first ||= page;rows.push(...(page.rows||[]));if((page.rows||[]).length<200)break;}
+    return {...first,rows};
+  }},
   channels:{async mine(){const q=new URLSearchParams({part:'id,snippet,contentDetails',mine:'true'});const body=await api(config,`https://www.googleapis.com/youtube/v3/channels?${q}`,{},fetchImpl,token);return body.items?.[0]||null;}},
   videos:{
     async update(payload){return api(config,'https://www.googleapis.com/youtube/v3/videos?part=snippet%2Cstatus',{method:'PUT',body:JSON.stringify(payload)},fetchImpl,token);},

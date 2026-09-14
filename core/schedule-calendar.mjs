@@ -58,26 +58,39 @@ export function calendarMonth(events, month, slots = DEFAULT_SLOTS, now = Date.n
     return { date, events: daily, slots: slots.map(time => ({ time, state: daily.some(event => event.pht?.slice(11,16) === time) ? 'OCCUPIED' : Date.parse(date + 'T' + time + ':00+08:00') <= now ? 'PAST' : 'AVAILABLE' })), protectedWindow: '20:00–21:00' };
   });
 }
-export function planReservations({ rows, batchId, startDate, slots = DEFAULT_SLOTS, cadence = 'daily', optionalSlot = false, snapshot = {}, now = Date.now() }) {
+export function windowSlots({windowStart,windowEnd,intervalMinutes=60,optionalSlot=false}){
+ const valid=t=>/^([01]\d|2[0-3]):[0-5]\d$/.test(t||'');
+ if(!valid(windowStart)||!valid(windowEnd))throw Error('SET_NEW_RELEASE_WINDOW');
+ const minutes=t=>Number(t.slice(0,2))*60+Number(t.slice(3)),start=minutes(windowStart),end=minutes(windowEnd)+(windowEnd<windowStart?1440:0);
+ if(!Number.isInteger(intervalMinutes)||intervalMinutes<15||intervalMinutes>1440)throw Error('INVALID_WINDOW_INTERVAL');
+ const slots=[];for(let m=start;m<=end;m+=intervalMinutes){const time=String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0');if(!isProtected(time)&&(time!=='01:30'||optionalSlot))slots.push(time);}
+ validateSlots(slots,optionalSlot);return slots;
+}
+export function planReservations({ rows, batchId, startDate, slots = DEFAULT_SLOTS, cadence = 'daily', optionalSlot = false, windowStart, windowEnd, intervalMinutes=60, postsPerDay, snapshot = {}, now = Date.now() }) {
   if (!/^INTAKE-/.test(batchId)) throw Error('NEW_INTAKE_BATCH_REQUIRED');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || new Date(startDate + 'T00:00:00Z').toISOString().slice(0,10) !== startDate) throw Error('INVALID_START_DATE');
   if (!['daily','every-other-day'].includes(cadence)) throw Error('INVALID_CADENCE');
-  const times = validateSlots(slots, optionalSlot);
+  const times = windowStart||windowEnd?windowSlots({windowStart,windowEnd,intervalMinutes,optionalSlot}):validateSlots(slots, optionalSlot);
+  const dailyLimit=postsPerDay===undefined?times.length:Number(postsPerDay);
+  if(!Number.isInteger(dailyLimit)||dailyLimit<1||dailyLimit>10)throw Error('POSTS_PER_DAY_MUST_BE_1_TO_10');
   const eligible = rows.filter(row => row.batch_id === batchId && ['AWAITING_METADATA','BATCH_READY','PRIVATE_UPLOADED'].includes(clean(row.status).toUpperCase()) && !/DUPLICATE|UNRESOLVED/i.test(clean(row.duplicate_disposition)) && !row.scheduled_date && !row.scheduled_time).sort((a,b) => clean(a.short_id).localeCompare(clean(b.short_id)));
   const occupied = new Set(calendarEvents(rows, snapshot).map(event => event.pht));
   const updates = [], step = cadence === 'daily' ? 1 : 2, start = Date.parse(startDate + 'T00:00:00Z');
   for (let offset = 0; updates.length < eligible.length && offset < 3660; offset += step) {
-    const date = new Date(start + offset * 86400000).toISOString().slice(0,10);
+    const windowDate = new Date(start + offset * 86400000).toISOString().slice(0,10);
+    let addedToday=0;
     for (const time of times) {
+      if(addedToday>=dailyLimit)break;
+      const date=windowStart&&windowEnd<windowStart&&time<windowStart?new Date(start+(offset+1)*86400000).toISOString().slice(0,10):windowDate;
       if (updates.length >= eligible.length) break;
       if (Date.parse(date + 'T' + time + ':00+08:00') <= now || occupied.has(date + ' ' + time)) continue;
       const row = eligible[updates.length];
       updates.push({ short_id: row.short_id, scheduled_date: date, scheduled_time: time, timezone: 'Asia/Manila', posting_slot: time, schedule_order: updates.length + 1 });
-      occupied.add(date + ' ' + time);
+      occupied.add(date + ' ' + time);addedToday++;
     }
   }
   if (updates.length !== eligible.length) throw Error('NO_AVAILABLE_SLOTS');
-  const plan = { batchId, startDate, slots: times, cadence, optionalSlot, updates, snapshotAt: snapshot.syncedAt || null };
+  const plan = { batchId, startDate, slots: times, cadence, optionalSlot, ...(windowStart?{windowStart,windowEnd,intervalMinutes}:{}), ...(postsPerDay!==undefined?{postsPerDay:dailyLimit}:{}), updates, snapshotAt: snapshot.syncedAt || null };
   return { ...plan, fingerprint: crypto.createHash('sha256').update(JSON.stringify(plan)).digest('hex') };
 }
 export function assertScheduleAvailable(rows, row, snapshot, now = Date.now()) {
