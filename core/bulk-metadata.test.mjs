@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {metadataProblems,shorterTitle,assessMetadataRow,applyMetadataEdit,auditBulkMetadata,saveBulkMetadata} from './bulk-metadata.mjs';
+import {readTracker} from './tracker-service.mjs';
+const row=()=>({short_id:'RS-1',file_hash:'a'.repeat(64),batch_id:'BULK_06',status:'BATCH_READY',public_title:'A cover',description:'A description',youtube_tags:'cover, music',hashtags:'#Cover',related_video_id:'abcDEF_1234',scheduled_date:'2030-01-01',scheduled_time:'17:30',youtube_video_id:'Y1'});
+const manifest=()=>({short_id:'RS-1',final_public_title:'Manifest cover',description:'A description',youtube_tags:'cover, music',hashtags:'#Cover',related_video_id:'abcDEF_1234'});
+test('metadata validation counts UTF-8 bytes and space-quoted tags, and offers a bounded title edit',()=>{
+ assert.deepEqual(metadataProblems(row()),[]);
+ assert.ok(metadataProblems({...row(),description:'字'.repeat(1700)}).some(i=>i.code==='DESCRIPTION_TOO_LONG'));
+ assert.ok(metadataProblems({...row(),youtube_tags:'long tag '.repeat(65)}).some(i=>i.code==='TAGS_TOO_LONG'));
+ assert.ok(metadataProblems({...row(),related_video_id:'https://youtube.com/watch?v=abcDEF_1234'}).some(i=>i.code==='RELATED_VIDEO_ID_INVALID'));
+ assert.equal(shorterTitle('x'.repeat(96)+' #Cover'),'x'.repeat(96));assert.equal(shorterTitle('x'.repeat(110)),null);
+});
+test('source differences are explicit and scheduled, duplicate, and recovery rows cannot be edited',()=>{
+ const item=assessMetadataRow({row:row(),manifest:manifest()});assert.equal(item.editable,true);assert.equal(item.differences[0].field,'public_title');
+ assert.equal(assessMetadataRow({row:{...row(),status:'SCHEDULED'},manifest:manifest(),classification:'ALREADY_SCHEDULED'}).editable,false);
+ assert.equal(assessMetadataRow({row:row(),manifest:manifest(),recovery:true}).editable,false);
+ assert.equal(assessMetadataRow({row:{...row(),duplicate_disposition:'UNRESOLVED'},manifest:manifest()}).editable,false);
+});
+test('saving requires a fresh review, validates content, and accepts metadata fields only',async()=>{
+ const item=assessMetadataRow({row:row(),manifest:manifest()}),updates=[],repository={commit:async update=>updates.push(update)};
+ await assert.rejects(applyMetadataEdit({repository,item,revision:'old',edits:{public_title:'Edit'}}),/CHANGED/);
+ await assert.rejects(applyMetadataEdit({repository,item,revision:item.revision,edits:{status:'SCHEDULED'}}),/UNSUPPORTED/);
+ await assert.rejects(applyMetadataEdit({repository,item,revision:item.revision,edits:{public_title:'x'.repeat(101)}}),/100/);
+ assert.equal(updates.length,0);
+ await applyMetadataEdit({repository,item,revision:item.revision,edits:{public_title:'Reviewed cover'}});
+ assert.deepEqual(updates,[{short_id:'RS-1',public_title:'Reviewed cover'}]);
+});
+const source=path.resolve('outputs/ralskies-content-engine/Ralskies_Upload_Tracker.xlsx'),manifestSource='G:/RS_BULK/BULK_06_2026-10-05_to_2026-10-11/BULK_MANIFEST.xlsx';
+const available=await Promise.all([source,manifestSource].map(f=>fs.access(f).then(()=>true,()=>false))).then(v=>v.every(Boolean));
+test('bulk metadata editor backs up and saves only the reviewed tracker cell, preserving manifest and all other rows',{skip:!available},async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bulk-meta-edit-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const trackerPath=path.join(dir,'tracker.xlsx'),manifestPath=path.join(dir,'BULK_MANIFEST.xlsx'),transactionPath=path.join(dir,'transaction.json');
+ const digest=async file=>crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex');
+ const originalHash=await digest(source);
+ await fs.copyFile(source,trackerPath);await fs.copyFile(manifestSource,manifestPath);
+ await fs.writeFile(transactionPath,JSON.stringify({state:'COMPLETE',batches:[{batchId:'BULK_06',folderPath:dir,videos:[]}]}));
+ const options={batchId:'BULK_06',trackerPath,outputDir:dir,transactionPath};
+ const before=await readTracker(trackerPath),manifestHash=await digest(manifestPath),audit=await auditBulkMetadata(options),item=audit.items.find(i=>i.editable);
+ const result=await saveBulkMetadata({...options,shortId:item.shortId,revision:item.revision,edits:{public_title:'Reviewed title for this cover'}});
+ assert.equal(result.remoteWrites,0);assert.ok(result.backup);
+ const after=await readTracker(trackerPath);
+ assert.equal(before.length,after.length);
+ for(let i=0;i<before.length;i++)for(const key of Object.keys(before[i]))assert.deepEqual(after[i][key],before[i].short_id===item.shortId&&key==='public_title'?'Reviewed title for this cover':before[i][key]);
+ assert.equal(await digest(manifestPath),manifestHash);assert.equal(await digest(source),originalHash);
+ await assert.rejects(saveBulkMetadata({...options,shortId:item.shortId,revision:item.revision,edits:{public_title:'Stale edit'}}),/CHANGED/);
+});

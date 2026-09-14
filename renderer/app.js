@@ -10,7 +10,7 @@ function counts(detail=state.batchDetail){
 }
 function notify(message,type='success'){
   const root=$('#toast-root');if(!root)return;
-  const item=document.createElement('div');item.className=`toast ${type}`;item.innerHTML=`<strong>${type==='error'?'Action failed':'Notification'}</strong><span>${esc(message)}</span>`;root.appendChild(item);
+  const item=document.createElement('div');item.className=`toast ${type}`;item.innerHTML=`<strong>${type==='error'?'Action failed':'Notification'}</strong><span>${esc(message)}</span>${type==='error'&&window.ErrorGuidance?.describe(message)?'<p>'+esc(window.ErrorGuidance.describe(message))+'</p>':''}`;root.appendChild(item);
   setTimeout(()=>item.remove(),6000);
 }
 function setModal(title,body,footer=''){state.modal={title,body,footer};render();}
@@ -42,7 +42,7 @@ function batchTable(){
 }
 function batches(){
   const c=counts(),w=workflow();
-  return `<section class="panel"><div class="section-title"><div><h2>Prepared batches</h2><p class="subtle">The app uses the existing bulk folders and manifests. It does not restage them.</p></div><span class="pill">${esc(state.selectedBatch)}</span></div><table><thead><tr><th>Batch</th><th>Date range</th><th>Rows</th><th>YouTube IDs</th><th>Complete</th><th>Actions</th></tr></thead><tbody>${batchTable()}</tbody></table></section><section class="panel section"><div class="section-title"><h2>${esc(state.selectedBatch)} production flow</h2><span class="pill">NEXT: ${esc(w.title)}</span></div>${summaryCards()}<div class="button-row"><button class="primary" data-discover-private ${c.awaiting?'':'disabled'}>1. Find &amp; Match Private Videos</button><button class="ghost" data-metadata-review ${c.ready?'':'disabled'}>2. Review Metadata &amp; Schedule</button><button class="ghost" data-upload-review ${c.awaiting?'':'disabled'}>Upload Missing Videos via API</button></div><p class="subtle">Upload new files privately through the API, or upload hashed files manually and use Find &amp; Match Private Videos.</p></section>`;
+  return `<section class="panel"><div class="section-title"><div><h2>Prepared batches</h2><p class="subtle">The app uses the existing bulk folders and manifests. It does not restage them.</p></div><span class="pill">${esc(state.selectedBatch)}</span></div><table><thead><tr><th>Batch</th><th>Date range</th><th>Rows</th><th>YouTube IDs</th><th>Complete</th><th>Actions</th></tr></thead><tbody>${batchTable()}</tbody></table></section><section class="panel section"><div class="section-title"><h2>${esc(state.selectedBatch)} production flow</h2><span class="pill">NEXT: ${esc(w.title)}</span></div>${summaryCards()}<div class="button-row"><button class="ghost" data-bulk-meta-audit>Check Metadata</button><button class="primary" data-discover-private ${c.awaiting?'':'disabled'}>1. Find &amp; Match Private Videos</button><button class="ghost" data-metadata-review ${c.ready?'':'disabled'}>2. Review Metadata &amp; Schedule</button><button class="ghost" data-upload-review ${c.awaiting?'':'disabled'}>Upload Missing Videos via API</button></div><p class="subtle">Upload new files privately through the API, or upload hashed files manually and use Find &amp; Match Private Videos.</p></section>`;
 }
 function queue(){
   const rows=state.batchDetail?.readiness||[];
@@ -126,11 +126,11 @@ async function applyProduction(){
   notify(`Production started for ${model.plannedOperationCount} private videos. Progress is shown in this window.`,'info');
   try{
     const result=await window.ralskies.applyProduction({approved:true,executionEnvironment:'REAL',executionPlan:model.plan,planHash:model.planHash});
-    if(!result?.ok){state.productionBusy=false;state.productionProgress=null;const code=result?.code||'UNKNOWN',message=result?.message||'No remote write was started by this request.';setModal(code==='EXECUTION_IN_PROGRESS'?'Production already running':'Production stopped',`<div class="error-box"><strong>${esc(code)}</strong><p>${esc(message)}</p><p>Review Logs / Recovery before trying again.</p></div>`);notify(code==='EXECUTION_IN_PROGRESS'?'Production is already running. Watch the active progress window.':`Production stopped: ${code}`,code==='EXECUTION_IN_PROGRESS'?'info':'error');return;}
+    if(!result?.ok){state.productionBusy=false;state.productionProgress=null;const code=result?.code||'UNKNOWN',message=result?.message||'No remote write was started by this request.';setModal(code==='EXECUTION_IN_PROGRESS'?'Production already running':'Production stopped',`<div class="error-box"><strong>${esc(code)}</strong><p>${esc(message)}</p><p>${esc(window.ErrorGuidance?.describe(message)||window.ErrorGuidance?.describe(code)||'Review Logs / Recovery before trying again.')}</p></div>`);notify(code==='EXECUTION_IN_PROGRESS'?'Production is already running. Watch the active progress window.':`Production stopped: ${code}`,code==='EXECUTION_IN_PROGRESS'?'info':'error');return;}
     state.productionBusy=false;state.productionProgress=null;
     setModal('Production execution complete',`<div class="success-box"><strong>${model.plannedOperationCount} operations completed.</strong><p>Each video was written, read back, verified, and then recorded in the tracker.</p></div>`);notify(`${model.batchId} metadata and schedules were applied successfully.`);
     try{await refresh();setModal('Production execution complete',`<div class="success-box"><strong>${model.plannedOperationCount} operations completed.</strong><p>Each video was written, read back, verified, and then recorded in the tracker.</p></div>`);}catch(refreshError){notify(`Execution completed, but screen refresh failed: ${refreshError?.message||refreshError}`,'error');}
-  }catch(error){state.productionBusy=false;state.productionProgress=null;const code=error?.code||'PRODUCTION_EXECUTION_ERROR';setModal('Production stopped',`<div class="error-box"><strong>${esc(code)}</strong><p>${esc(error?.message||String(error))}</p><p>Do not retry until Logs / Recovery shows whether a remote write occurred.</p></div>`);notify(`Production stopped: ${code}`,'error');}
+  }catch(error){state.productionBusy=false;state.productionProgress=null;const code=error?.code||'PRODUCTION_EXECUTION_ERROR';setModal('Production stopped',`<div class="error-box"><strong>${esc(code)}</strong><p>${esc(error?.message||String(error))}</p><p>Do not retry until Logs / Recovery shows whether a remote write occurred.</p><p>${esc(window.ErrorGuidance?.describe(error?.message)||window.ErrorGuidance?.describe(code)||"")} </p></div>`);notify(`Production stopped: ${code}`,'error');}
 }
 async function uploadReview(){
   const model=await window.ralskies.uploadReview(state.selectedBatch);state.uploadReview=model;
@@ -146,6 +146,7 @@ document.addEventListener('click',async event=>{
   const target=event.target;
   if(target.matches('[data-close-modal]')){closeModal();return;}
   try{
+    if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-bulk-meta-'))){await window.BulkMetadata.action(target);return;}
     const nav=target.closest('nav button');if(nav){state.view=nav.dataset.view;render();return;}
     if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-llm-'))){await metadataAction(target);return;}
     if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-draft-')||name.startsWith('data-calendar-'))){await draftAction(target);return;}
