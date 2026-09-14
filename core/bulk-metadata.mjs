@@ -80,5 +80,5 @@ export async function saveBulkMetadata(options){
   const result=await applyMetadataEdit({repository,item,revision:options.revision,edits:options.edits});
   if(result.fields.includes('related_video_id'))await exportRelatedVideoActions({rows:await readTracker(options.trackerPath),outputDir:options.outputDir});
   return {...result,backup,destination:'tracker'};
- });
+ }, {recoverAbandoned:true});
 }
