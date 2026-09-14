@@ -38,7 +38,8 @@ function videos(){
   return `<section class="panel"><div class="section-title"><h2>Local video inventory</h2><span class="pill">${state.inventory?.files?.length||0} MP4 files</span></div><table><thead><tr><th>File</th><th>SHA-256</th><th>Size</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(row.name)}</td><td class="mono">${esc(row.hash)}</td><td>${(row.size/1048576).toFixed(1)} MB</td></tr>`).join('')}</tbody></table></section>`;
 }
 function completedBatch(batch){const c=counts(batch?.detail);return c.total>0&&c.scheduled===c.total;}
-function visibleBatches(){return (state.batches?.batches||[]).filter(batch=>state.showUploadHistory||!completedBatch(batch));}
+function historyBatch(batch){return completedBatch(batch)||(state.settings?.archivedBatchIds||[]).includes(batch?.batchId);}
+function visibleBatches(){return (state.batches?.batches||[]).filter(batch=>state.showUploadHistory||!historyBatch(batch));}
 function batchTable(){
   return visibleBatches().map(batch=>{const detail=batch.detail,c=counts(detail),selected=batch.batchId===state.selectedBatch;return `<tr class="${selected?'selected-row':''}"><td><strong>${esc(batch.batchId)}</strong></td><td>${esc(batch.startDate)} to ${esc(batch.endDate)}</td><td>${c.total||batch.itemCount||0}</td><td>${c.linked}</td><td>${c.scheduled}</td><td><button class="ghost" data-select-batch="${esc(batch.batchId)}">${selected?'Selected':'Select'}</button><button class="ghost" data-inspect-batch="${esc(batch.batchId)}">Inspect</button></td></tr>`;}).join('');
 }
@@ -46,7 +47,7 @@ function batches(){
   const visible=visibleBatches();
   if(!visible.some(batch=>batch.batchId===state.selectedBatch)){state.selectedBatch=visible[0]?.batchId||'';state.batchDetail=visible[0]?.detail||null;}
   const c=counts(),w=workflow();
-  const historyCount=(state.batches?.batches||[]).filter(completedBatch).length;
+  const historyCount=(state.batches?.batches||[]).filter(historyBatch).length;
   const historyToggle='<div class="button-row"><button class="ghost" data-toggle-upload-history aria-pressed="'+Boolean(state.showUploadHistory)+'">'+(state.showUploadHistory?'Hide upload history':'Show upload history')+' ('+historyCount+')</button></div>';
   if(!visible.length)return '<section class="panel"><h2>No active batches</h2><p>Completed uploads are kept in history. Add new videos in Drafts to begin.</p>'+historyToggle+'</section>';
   return `<section class="panel"><div class="section-title"><div><h2>${state.showUploadHistory?'Batches and upload history':'Active batches'}</h2><p class="subtle">The app uses the existing bulk folders and manifests. It does not restage them.</p></div><span class="pill">${esc(state.selectedBatch)}</span></div><table><thead><tr><th>Batch</th><th>Date range</th><th>Rows</th><th>YouTube IDs</th><th>Complete</th><th>Actions</th></tr></thead><tbody>${batchTable()}</tbody></table>${historyToggle}</section><section class="panel section"><div class="section-title"><h2>${esc(state.selectedBatch)} production flow</h2><span class="pill">NEXT: ${esc(w.title)}</span></div>${summaryCards()}<div class="button-row"><button class="ghost" data-bulk-meta-audit>Check Metadata</button><button class="primary" data-discover-private ${c.awaiting?'':'disabled'}>1. Find &amp; Match Private Videos</button><button class="ghost" data-metadata-review ${c.ready?'':'disabled'}>2. Review Metadata &amp; Schedule</button><button class="ghost" data-upload-review ${c.awaiting?'':'disabled'}>Upload Missing Videos via API</button></div><p class="subtle">Upload new files privately through the API, or upload hashed files manually and use Find &amp; Match Private Videos.</p></section><details class="panel section"><summary>Video queue and statuses</summary>${queue()}</details>`;
@@ -86,7 +87,7 @@ async function refresh(){
   if(state.view==='logs'&&window.ralskies.activityHistory)state.activity=await window.ralskies.activityHistory();
   render();
 }
-async function selectBatch(batchId){state.view='batches';state.selectedBatch=batchId;state.batchDetail=await window.ralskies.batchDetail(batchId);if(completedBatch({detail:state.batchDetail}))state.showUploadHistory=true;state.modal=null;render();notify(`${batchId} selected. ${workflow().title}.`);}
+async function selectBatch(batchId){state.view='batches';state.selectedBatch=batchId;state.batchDetail=await window.ralskies.batchDetail(batchId);if(historyBatch({batchId,detail:state.batchDetail}))state.showUploadHistory=true;state.modal=null;render();notify(`${batchId} selected. ${workflow().title}.`);}
 function batchDetailBody(detail){const c=counts(detail);return `<div class="grid"><div class="card">Rows: ${c.total}</div><div class="card">Linked: ${c.linked}</div><div class="card">Ready: ${c.ready}</div><div class="card">Complete: ${c.scheduled}</div></div><dl class="details"><dt>Folder</dt><dd>${esc(detail.folderPath)}</dd><dt>Manifest</dt><dd>${esc(detail.manifest?.manifestPath)}</dd></dl><div class="button-row"><button class="primary" data-discover-private>Find private videos</button><button class="ghost" data-metadata-review>Metadata review</button></div>`;}
 async function discoverPrivate(){
   notify(`Reading private YouTube videos for ${state.selectedBatch}…`,'info');
