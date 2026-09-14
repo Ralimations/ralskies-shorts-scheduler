@@ -16,10 +16,18 @@ test('draft view exposes missing metadata and preserves legacy batch navigation'
 test('calendar renders a whole month with reservation provenance and protected slots',()=>{
   const dom=new JSDOM('<body><main></main></body>',{runScripts:'outside-only'});dom.window.eval(source);
   const events=[{pht:'2027-09-14 17:30',title:'Reserved cover',state:'RESERVED',source:'TRACKER'},{pht:'2027-09-15 22:30',title:'Scheduled cover',state:'YOUTUBE_SCHEDULED',source:'YOUTUBE'}];
-  dom.window.document.querySelector('main').innerHTML=dom.window.DraftViews.calendar({calendarMonth:'2027-09',calendar:{events,syncedAt:'2027-09-01T00:00:00Z'}},value=>String(value??''));
+  dom.window.document.querySelector('main').innerHTML=dom.window.DraftViews.calendar({calendarMode:'month',calendarMonth:'2027-09',calendar:{events,syncedAt:'2027-09-01T00:00:00Z'}},value=>String(value??''));
   assert.equal(dom.window.document.querySelectorAll('article.calendar-day').length,30);
   assert.equal(dom.window.document.querySelectorAll('.calendar-event.local').length,1);
   assert.equal(dom.window.document.querySelectorAll('.calendar-event.remote').length,1);
-  assert.equal(dom.window.document.querySelectorAll('.calendar-protected').length,30);
+  assert.match(dom.window.document.body.textContent,/20:00-21:00 manual only/);
   assert.match(dom.window.document.body.textContent,/YOUTUBE SCHEDULED/);dom.window.close();
+});
+
+test('calendar defaults to readable agenda and safely falls back from an invalid month',()=>{
+ const dom=new JSDOM('<body><main></main></body>',{runScripts:'outside-only'});dom.window.eval(source);
+ const html=dom.window.DraftViews.calendar({calendarMonth:'invalid',calendar:{events:[]}},v=>String(v??''));
+ dom.window.document.querySelector('main').innerHTML=html;
+ assert.ok(dom.window.document.querySelector('.calendar-agenda'));assert.equal(dom.window.document.querySelector('.calendar-grid'),null);
+ assert.match(dom.window.document.querySelector('#calendar-month').value,/^\d{4}-\d{2}$/);dom.window.close();
 });

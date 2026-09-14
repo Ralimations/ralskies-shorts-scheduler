@@ -18,9 +18,10 @@ window.ralskies={
   productionReview:async()=>({batchId:'BULK_03',youtubeLinkedCount:2,readyCount:2,plannedOperationCount:2,blockedCount:0,remoteBlockers:[],exclusions:[],planHash:'plan-hash',plan:{executionId:'test-execution',operationCount:2},rows:[{order:1,shortId:'RS-0',song:'Song 0',youtubeId:'YT-0',hash:hashA,currentYoutubeTitle:hashA,finalAuthoritativeTitle:'Final Song 0',schedulePht:'2026-09-14 17:30',publishAtUtc:'2026-09-14T09:30:00.000Z',productionEligibility:'READY'},{order:2,shortId:'RS-1',song:'Song 1',youtubeId:'YT-1',hash:hashB,currentYoutubeTitle:hashB,finalAuthoritativeTitle:'Final Song 1',schedulePht:'2026-09-14 22:30',publishAtUtc:'2026-09-14T14:30:00.000Z',productionEligibility:'READY'}]}),
   applyProduction:async()=>{productionCalls++;return productionResult;},onProductionProgress:callback=>{progressCallback=callback;return()=>{};},uploadReview:async()=>({}),applyPrivateUpload:async()=>({ok:true}),approveTitle:async()=>({}),keepTitle:async()=>({}),saveSettings:async value=>value
 };
+vm.runInContext(await fs.readFile(new URL('./draft-views.js',import.meta.url),'utf8'),dom.getInternalVMContext());
 vm.runInContext(source,dom.getInternalVMContext());await new Promise(resolve=>setTimeout(resolve,0));
 test('guided production workflow locks repeated Apply clicks and reports persisted progress',async()=>{
-  assert.match(window.document.body.textContent,/Current workflow/);
+  assert.match(window.document.body.textContent,/New Shorts/);
   window.document.querySelector('[data-view="batches"]').click();assert.match(window.document.querySelector('#view').textContent,/Find & Match Private Videos/);
   window.document.querySelector('[data-discover-private]').click();await new Promise(resolve=>setTimeout(resolve,0));
   assert.match(window.document.querySelector('#modal-root').textContent,/Exact selected-batch match found/);assert.match(window.document.querySelector('#modal-root').textContent,/Unrelated private videos: 4/);assert.equal(window.document.querySelector('[data-confirm-matches]').disabled,false);assert.ok(window.document.querySelector('.toast'));

@@ -11,11 +11,17 @@ const TRACKER = path.join(OUT, 'Ralskies_Upload_Tracker.xlsx');
 let draftDesktop, trackerMutationBusy=false;
 const mutatingHandlers=new Set(['engine:apply-private-upload','engine:confirm-matches','engine:finalize-recovery','engine:apply-production','engine:approve-title','engine:keep-title','engine:metadata-approve','engine:bulk-metadata-save']);
 const registerHandler=ipcMain.handle.bind(ipcMain);
+const activityHandlers=new Set([...mutatingHandlers,'engine:save-settings','engine:draft-configure','engine:draft-scan','engine:draft-metadata','engine:draft-reserve','engine:draft-link','engine:calendar-sync','engine:metadata-settings-save','engine:metadata-generate']);
 ipcMain.handle=(name,handler)=>registerHandler(name,async(...args)=>{
-  if(!mutatingHandlers.has(name))return handler(...args);
-  if(trackerMutationBusy||draftDesktop?.isBusy())throw Error('TRACKER_MUTATION_IN_PROGRESS');
-  trackerMutationBusy=true;try{return await handler(...args);}finally{trackerMutationBusy=false;}
+ const log=async(state)=>{if(activityHandlers.has(name)){try{const {appendActivity}=await import('./core/activity-history.mjs');await appendActivity(OUT,{event:name.replace('engine:',''),state});}catch(error){console.error('Activity log write failed:',error.code||'unknown');}}};
+ let acquired=false;
+ try{
+  if(mutatingHandlers.has(name)){if(trackerMutationBusy||draftDesktop?.isBusy())throw Error('TRACKER_MUTATION_IN_PROGRESS');trackerMutationBusy=true;acquired=true;}
+  await log('STARTED');const result=await handler(...args);await log(result?.ok===false?'FAILED':'COMPLETED');return result;
+ }catch(error){await log('FAILED');throw error;}
+ finally{if(acquired)trackerMutationBusy=false;}
 });
+
 function walk(dir){let out=[]; for(const e of fs.readdirSync(dir,{withFileTypes:true})){const f=path.join(dir,e.name); if(e.isDirectory()&&e.name!=='node_modules'&&!f.includes(`${path.sep}.git${path.sep}`))out.push(...walk(f)); else if(e.isFile()&&e.name.toLowerCase().endsWith('.mp4'))out.push(f)} return out}
 function digest(file){return new Promise((ok,no)=>{const h=crypto.createHash('sha256');fs.createReadStream(file).on('error',no).on('data',x=>h.update(x)).on('end',()=>ok(h.digest('hex')))})}
 function dashboard(){if(!fs.existsSync(INSPECT))return {}; const lines=fs.readFileSync(INSPECT,'utf8').split(/\r?\n/).filter(Boolean); const t=lines.map(x=>JSON.parse(x)).find(x=>x.kind==='table'&&x.sheet==='Dashboard'); const r={}; for(const row of t?.values||[])if(row?.[0])r[String(row[0])]=row[1]; return r}
@@ -103,8 +109,9 @@ ipcMain.handle('engine:title-audit',async()=>{const {readTracker}=await import('
 ipcMain.handle('engine:title-review-queue',async()=>{const {readTracker}=await import('./core/tracker-service.mjs');const {auditTitle,recommendTitle}=await import('./core/title-intelligence.mjs');const {HUMAN_EDIT_CANDIDATES}=await import('./core/recommendation-variety.mjs');const rows=(await readTracker(TRACKER)).map(auditTitle).filter(x=>x.health!=='TITLE_HEALTHY'&&x.title_review_status!=='TITLE_KEEP_CURRENT').sort((a,b)=>String(a.priority).localeCompare(String(b.priority))||String(a.health).localeCompare(String(b.health)));return Promise.all(rows.map(async row=>({...row,recommendations:(await recommendTitle(row)).recommendations.concat(HUMAN_EDIT_CANDIDATES[row.short_id]?[{title:HUMAN_EDIT_CANDIDATES[row.short_id],family:'HUMAN_EDIT',score:null,warnings:[],supporting_examples:[]}]:[])})));});
 ipcMain.handle('engine:approve-title',async(_e,p)=>{const {approveTitle}=await import('./core/title-approval.mjs');return approveTitle({shortId:p.shortId,title:p.title,family:p.family,source:p.source,trackerPath:TRACKER})});
 ipcMain.handle('engine:keep-title',async(_e,shortId)=>{const {keepCurrentTitle}=await import('./core/title-approval.mjs');return keepCurrentTitle({shortId,trackerPath:TRACKER})});
+ipcMain.handle('engine:activity-history',async()=>{const {activityHistory}=await import('./core/activity-history.mjs');return activityHistory(OUT);});
 ipcMain.handle('engine:settings',()=>fs.existsSync(SETTINGS)?JSON.parse(fs.readFileSync(SETTINGS,'utf8')):{timezone:'Asia/Manila',slots:['17:30','22:30'],optionalSlot:'01:30',protectedWindow:'20:00–21:00',shortsPerDay:2,dryRun:true});
-ipcMain.handle('engine:save-settings',(_e,settings)=>{fs.mkdirSync(OUT,{recursive:true});fs.writeFileSync(SETTINGS,JSON.stringify(settings,null,2));return settings});
+ipcMain.handle('engine:save-settings',async(_e,settings)=>{const {validateSlots}=await import('./core/schedule-calendar.mjs');if(settings.timezone!=='Asia/Manila')throw Error('TIMEZONE_MUST_BE_ASIA_MANILA');const saved={...settings,slots:validateSlots(settings.slots,settings.optionalSlotEnabled===true)};const {writeJson}=await import('./core/pipeline-store.mjs');await writeJson(SETTINGS,saved);return saved});
 ipcMain.handle('engine:choose-folder',()=>dialog.showOpenDialogSync({properties:['openDirectory']})?.[0]||null);
 ipcMain.handle('engine:dry-run',(_e,action)=>({action,dryRun:true,message:'No files, tracker rows, or YouTube resources were modified.'}));
 function createWindow(){const win=new BrowserWindow({width:1440,height:930,minWidth:1100,minHeight:700,backgroundColor:'#0b1020',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false}});win.loadFile(path.join(__dirname,'renderer','index.html'))}

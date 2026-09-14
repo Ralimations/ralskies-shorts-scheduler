@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {metadataProblems,shorterTitle,assessMetadataRow,applyMetadataEdit,auditBulkMetadata,saveBulkMetadata} from './bulk-metadata.mjs';
-import {readTracker} from './tracker-service.mjs';
+import {readTracker,openTracker,updateTrackerRows,saveTracker} from './tracker-service.mjs';
 const row=()=>({short_id:'RS-1',file_hash:'a'.repeat(64),batch_id:'BULK_06',status:'BATCH_READY',public_title:'A cover',description:'A description',youtube_tags:'cover, music',hashtags:'#Cover',related_video_id:'abcDEF_1234',scheduled_date:'2030-01-01',scheduled_time:'17:30',youtube_video_id:'Y1'});
 const manifest=()=>({short_id:'RS-1',final_public_title:'Manifest cover',description:'A description',youtube_tags:'cover, music',hashtags:'#Cover',related_video_id:'abcDEF_1234'});
 test('metadata validation counts UTF-8 bytes and space-quoted tags, and offers a bounded title edit',()=>{
@@ -40,6 +40,7 @@ test('bulk metadata editor backs up and saves only the reviewed tracker cell, pr
  await fs.copyFile(source,trackerPath);await fs.copyFile(manifestSource,manifestPath);
  await fs.writeFile(transactionPath,JSON.stringify({state:'COMPLETE',batches:[{batchId:'BULK_06',folderPath:dir,videos:[]}]}));
  const options={batchId:'BULK_06',trackerPath,outputDir:dir,transactionPath};
+ const fixture=await openTracker(trackerPath);const fixtureRows=await readTracker(trackerPath);await updateTrackerRows(fixture,[{short_id:fixtureRows.find(row=>row.batch_id==='BULK_06').short_id,status:'BATCH_READY'}]);await saveTracker(fixture);
  const before=await readTracker(trackerPath),manifestHash=await digest(manifestPath),audit=await auditBulkMetadata(options),item=audit.items.find(i=>i.editable);
  const result=await saveBulkMetadata({...options,shortId:item.shortId,revision:item.revision,edits:{public_title:'Reviewed title for this cover'}});
  assert.equal(result.remoteWrites,0);assert.ok(result.backup);

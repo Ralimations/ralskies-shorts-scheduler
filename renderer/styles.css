@@ -18,3 +18,5 @@
 .metadata-candidates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.metadata-description{white-space:pre-wrap}.metadata-candidates h3{font-size:16px}@media(max-width:900px){.metadata-candidates{grid-template-columns:1fr}}
 
 .metadata-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;background:#f4f4f4;padding:12px;}
+
+main{min-width:0}aside{flex-shrink:0}.calendar-month-layout{overflow-x:auto}.calendar-day{min-height:140px}.calendar-event span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.calendar-agenda{margin-top:16px}.agenda-day{display:grid;grid-template-columns:125px minmax(0,1fr);gap:20px;border-top:1px solid #ccc;padding:16px 0}.agenda-day h3{font-size:14px;margin:0}.agenda-event{display:grid;grid-template-columns:55px minmax(0,1fr);gap:12px;margin-bottom:12px;overflow-wrap:anywhere}.settings input[type=checkbox]{width:auto;justify-self:start}button[aria-pressed=true]{background:#111;color:white}@media(max-width:680px){.agenda-day{grid-template-columns:1fr;gap:8px}}
