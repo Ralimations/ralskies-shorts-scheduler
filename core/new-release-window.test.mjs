@@ -3,7 +3,7 @@ import {windowSlots,planReservations} from './schedule-calendar.mjs';
 import {summarizeAnalytics,weeklyRange,generateWeeklyReview} from './weekly-analytics.mjs';
 test('overnight window keeps chronological order and excludes protected and optional times',()=>{
  const slots=windowSlots({windowStart:'20:00',windowEnd:'02:00',intervalMinutes:30});
- assert.equal(slots[0],'21:30');assert.ok(slots.indexOf('23:30')<slots.indexOf('00:00'));assert.equal(slots.at(-1),'02:00');assert.ok(!slots.includes('01:30'));assert.ok(!slots.includes('21:00'));
+ assert.equal(slots[0],'20:00');assert.ok(slots.indexOf('23:30')<slots.indexOf('00:00'));assert.equal(slots.at(-1),'02:00');assert.ok(!slots.includes('01:30'));assert.ok(!slots.includes('21:00'));
  assert.ok(windowSlots({windowStart:'23:30',windowEnd:'02:00',intervalMinutes:30,optionalSlot:true}).includes('01:30'));
 });
 test('nightly quotas and occupied slots place early morning on the following date, leaving older rows untouched',()=>{

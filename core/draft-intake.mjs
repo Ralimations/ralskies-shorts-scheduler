@@ -23,12 +23,12 @@ export function inside(root, candidate) {
   const relative = path.relative(root, candidate);
   return relative !== '' && !relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative);
 }
-async function mediaFiles(directory) {
+async function mediaFiles(directory, excludedDirectory) {
   const files = [];
   for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
-    if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) files.push(...await mediaFiles(file));
+    if (entry.isSymbolicLink() || path.relative(excludedDirectory, file) === '') continue;
+    if (entry.isDirectory()) files.push(...await mediaFiles(file, excludedDirectory));
     else if (entry.isFile() && /\.mp4$/i.test(entry.name)) files.push(file);
   }
   return files.sort();
@@ -40,7 +40,7 @@ export async function trackerRepository(trackerPath) {
       const tracker = await openTracker(trackerPath);
       // The production tracker is the only authority; no JSON queue replaces it.
       await backupTracker(trackerPath, 'intake-' + transactionId);
-      ensureTrackerHeaders(tracker, ['batch_id','original_path','original_filename','current_path','current_filename','metadata_state','intake_at','verification_state','verification_timestamp']);
+      ensureTrackerHeaders(tracker, ['batch_id','original_path','original_filename','current_path','current_filename','metadata_state','intake_at','verification_state','verification_timestamp','content_type','schedule_policy']);
       appendTrackerRows(tracker, additions);
       await updateTrackerRows(tracker, updates);
       await saveTracker(tracker);
@@ -54,10 +54,10 @@ export async function trackerRepository(trackerPath) {
 }
 export async function validateDraftFolders(draftFolder,hashedFolder) {
     const draftRoot = await fs.realpath(draftFolder);
-    // Validate both resolved roots before any file move.
+    // A nested staging folder is safe when the scanner excludes its entire subtree.
     const parent = await fs.realpath(path.dirname(hashedFolder));
     const hashRoot = path.join(parent, path.basename(hashedFolder));
-    if (draftRoot.toLowerCase() === hashRoot.toLowerCase() || inside(draftRoot, hashRoot) || inside(hashRoot, draftRoot)) throw Error('DRAFT_AND_HASH_FOLDERS_MUST_BE_SEPARATE');
+    if (path.relative(draftRoot, hashRoot) === '' || inside(hashRoot, draftRoot)) throw Error('DRAFT_AND_HASH_FOLDERS_MUST_BE_SEPARATE');
     try { if ((await fs.lstat(hashRoot)).isSymbolicLink() || await fs.realpath(hashRoot) !== hashRoot) throw Error('HASH_FOLDER_MUST_NOT_BE_A_LINK'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     return {draftRoot,hashRoot};
@@ -69,7 +69,7 @@ export async function scanDrafts({ draftFolder, hashedFolder, outputDir, reposit
     const shortIds = new Set(rows.map(row => clean(row.short_id)));
     const batchId = 'INTAKE-' + new Date(now).toISOString().replace(/[-:.TZ]/g,'') + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
     const result = { dryRun, batchId, added: [], skipped: [], waiting: [], exceptions: [] };
-    for (const source of await mediaFiles(draftRoot)) {
+    for (const source of await mediaFiles(draftRoot, hashRoot)) {
       try {
         const resolved = await fs.realpath(source);
         if (!inside(draftRoot, resolved) || (await fs.lstat(source)).isSymbolicLink()) throw Error('SOURCE_OUTSIDE_DRAFT_FOLDER');
@@ -100,9 +100,7 @@ export async function scanDrafts({ draftFolder, hashedFolder, outputDir, reposit
           journal.state = 'COPIED_VERIFIED'; await writeJson(journalPath, journal);
           await repository.commit({ additions: [row] });
           journal.state = 'TRACKED'; await writeJson(journalPath, journal);
-          // Remove only this verified source inside the explicitly selected draft root.
-          if (!inside(draftRoot, await fs.realpath(source)) || (await fs.lstat(source)).isSymbolicLink() || await hashFile(source) !== hash) throw Error('SOURCE_CHANGED_BEFORE_MOVE');
-          await fs.unlink(source);
+          // Originals stay in Drafts. Only the verified staging copy is used downstream.
           journal.state = 'COMPLETE'; await writeJson(journalPath, journal);
         }
         known.add(hash); shortIds.add(shortId); result.added.push(row);
@@ -119,12 +117,14 @@ export async function scanDrafts({ draftFolder, hashedFolder, outputDir, reposit
 export async function saveDraftMetadata({ repository, shortId, metadata }) {
   const rows = await repository.read(), matches = rows.filter(row => row.short_id === shortId);
   if (matches.length !== 1 || !editableDraft(matches[0])) throw Error('DRAFT_NOT_EDITABLE');
-  const allowed = ['public_title','description','youtube_tags','category','source_song','artist_or_fandom','related_video_id'];
+  const allowed = ['content_type','public_title','description','youtube_tags','category','source_song','artist_or_fandom','related_video_id'];
   const fields = Object.fromEntries(allowed.filter(key => key in metadata).map(key => [key, String(metadata[key] ?? '')]));
+  if (fields.content_type && !['COVER','ORIGINAL'].includes(fields.content_type)) throw Error('INVALID_CONTENT_TYPE');
   if ((fields.public_title || '').length > 100 || (fields.description || '').length > 5000) throw Error('METADATA_TOO_LONG');
   if (fields.related_video_id && !/^[A-Za-z0-9_-]{11}$/.test(fields.related_video_id)) throw Error('INVALID_RELATED_VIDEO_ID');
   const row = { ...matches[0], ...fields }, missing = metadataMissing(row);
   const update = { short_id: shortId, ...fields, metadata_state: missing.length ? 'AWAITING_METADATA' : 'METADATA_READY', status: row.youtube_video_id ? 'PRIVATE_UPLOADED' : missing.length ? 'AWAITING_METADATA' : 'BATCH_READY' };
+  if (matches[0].schedule_policy === 'four-per-week' && fields.source_song !== undefined && fields.source_song !== matches[0].source_song) Object.assign(update, { scheduled_date: '', scheduled_time: '', posting_slot: '', schedule_order: '', schedule_policy: '' });
   await repository.commit({ updates: [update] });
   return { ...row, ...update };
 }

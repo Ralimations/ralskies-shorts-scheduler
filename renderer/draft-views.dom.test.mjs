@@ -20,7 +20,7 @@ test('calendar renders a whole month with reservation provenance and protected s
   assert.equal(dom.window.document.querySelectorAll('article.calendar-day').length,30);
   assert.equal(dom.window.document.querySelectorAll('.calendar-event.local').length,1);
   assert.equal(dom.window.document.querySelectorAll('.calendar-event.remote').length,1);
-  assert.match(dom.window.document.body.textContent,/20:00-21:00 manual only/);
+  assert.match(dom.window.document.body.textContent,/20:01-21:00 manual only/);
   assert.match(dom.window.document.body.textContent,/YOUTUBE SCHEDULED/);dom.window.close();
 });
 

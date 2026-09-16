@@ -3,7 +3,7 @@ import { buildBatchReadiness, linkManifestRows, metadataReadiness, utcPublishAt 
 
 const RECOVERY = new Set(['APPLIED','APPLIED_UNVERIFIED','VERIFYING','VERIFIED_PENDING_TRACKER','RECONCILIATION_REQUIRED']);
 const COMPLETE = new Set(['SCHEDULED','PUBLISHED','COMPLETE']);
-const BLOCKED = new Set(['BLOCKED','DUPLICATE','FAILED']);
+const BLOCKED = new Set(['BLOCKED','DUPLICATE','FAILED','RETIRED']);
 const clean = value => String(value ?? '').trim();
 function legacyLink(row) { return { manifest: row, tracker: row, classification: COMPLETE.has(clean(row.status).toUpperCase()) ? 'ALREADY_SCHEDULED' : 'MATCHED', identity: { hash: clean(row.file_hash).toUpperCase(), shortId: clean(row.short_id) }, identityMethod: 'TRACKER' }; }
 

@@ -6,7 +6,7 @@ A local-first workflow for preparing, uploading, scheduling, and verifying Ralsk
 
 - Never upload, publish, schedule, rename, move, or overwrite production media during a dry run.
 - Preserve `DUPLICATE`, `BLOCKED`, and unresolved rows. Do not force them through the workflow.
-- Keep the 20:00–21:00 Asia/Manila window reserved for manual uploads.
+- Keep the 20:01–21:00 Asia/Manila window reserved for manual uploads.
 - Use the official YouTube account and confirm the Ralskies channel before every upload.
 - A possible remote write is never retried automatically. Reconcile the existing video instead.
 - Do not use the automated production Apply button for a manual batch.
@@ -166,10 +166,12 @@ continue to use their original tracker metadata and manifests.
    **Intake Now** to register them. **Watch Folder** repeats local intake every
    15 seconds while the app is open; it starts disabled.
 3. Files must be unchanged for at least 10 seconds. Intake calculates SHA-256,
-   copies to `outputs/ralskies-content-engine/hashed/<SHA256>.mp4`, verifies both
-   copies, backs up and saves the tracker, and verifies the saved row before
-   removing the source from the selected draft folder. Original paths remain
-   recorded. A hash already in the tracker is skipped and its row is untouched.
+   copies to `<Drafts>/hashed/<SHA256>.mp4`, verifies both copies, backs up and
+   saves the tracker, and verifies the saved row. Originals retain their filenames,
+   contents and locations in Drafts. The scanner excludes the entire hashed
+   subfolder, including files not yet tracked. A hash already in the tracker is
+   skipped and its row is untouched. Existing tracked staging paths remain valid;
+   choosing another draft folder sets its new-copy destination to `<Drafts>/hashed`.
 4. New rows enter an `INTAKE-...` batch with `AWAITING_METADATA`. Their title,
    description, tags, and category are blank. Use **Metadata** to enter these
    manually, or use the optional reviewed LM Studio suggestions described below.
@@ -183,7 +185,7 @@ continue to use their original tracker metadata and manifests.
 7. In **Calendar**, use **Sync YouTube** to include existing scheduled and
    published channel uploads. **Reserve Posting Times** lets you choose a start
    date, times, and daily or every-other-day posting. Existing reservations,
-   including old batch schedules, are not reassigned. The 20:00–21:00 Manila
+   including old batch schedules, are not reassigned. The 20:01–21:00 Manila
    window is protected; 01:30 needs the optional-slot checkbox.
 8. Once metadata, a private upload, and a future reservation are present, use the
    batch's **Review Metadata & Schedule** flow. New intake publication checks
@@ -267,3 +269,32 @@ The local model is instructed to aim for 90 characters, use natural wording
 about the supplied song or cover moment, avoid unsupported claims and generic
 clickbait, and use at most two optional title hashtags. Extra hashtags belong
 in the description. Generated text must still pass validation and human review.
+
+## Growth publishing policy (September 16, 2026)
+
+New drafts use four posts per Monday–Sunday week, at most one per day, on Monday,
+Wednesday, Friday and Sunday. The default time is 20:00 (8 PM) Asia/Manila. The user explicitly authorized this
+time; 22:00 (10 PM) stays available for recent/latest covers and is not added
+as a second automatic post. The protected
+20:01–21:00 manual window remains unchanged. Clips of the same song must be at least
+seven full days apart, including reservations in other intake batches.
+
+Add finished MP4s to the configured draft folder each week. Preview Intake / Intake
+Now and the existing opt-in watcher accept incremental additions and skip known hashes.
+Set the song identity in Metadata before planning; use the same song name for all its
+clips. Mark original songs as ORIGINAL in Performance type. Originals take priority
+among eligible clips when filling open dates; existing reservations are preserved.
+
+Plan Next Two Weeks defaults to all intake batches and reserves at most 14 days ahead.
+Rows outside that window or missing a song identity remain waiting. Repeat the preview
+when new clips arrive. The calendar includes manual uploads when checking daily and
+weekly capacity. Unknown remote song identities cannot contribute to a song cooldown.
+No LLM is involved in intake identity, scheduling, copying, retries or status changes.
+
+The user confirmed that scheduled uploads after September 16 were deleted. Those
+102 tracker rows were backed up and marked RETIRED / schedule_eligible=NO; their
+original schedules, hashes and YouTube IDs remain historical records. This is a
+user-confirmed deletion, not an API verification. RETIRED rows are excluded from
+calendar reservations, private-upload eligibility, production reviews and stale
+execution plans. Unresolved and DUPLICATE rows were preserved. Never retry a retired
+upload automatically. No YouTube writes were performed during this change.

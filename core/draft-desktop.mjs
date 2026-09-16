@@ -50,7 +50,7 @@ export async function validateIntakeProduction({ rows, plan, outputDir }) {
 export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProductionBusy = () => false, onScan = () => {}, startTimer = setInterval, stopTimer = clearInterval, syncCalendar = syncChannelCalendar }) {
   const configPath = path.join(outputDir,'draft-settings.json'), snapshotPath = path.join(outputDir,'youtube-calendar.json');
   let busy = false, timer;
-  const defaults = { enabled: false, draftFolder: '', hashedFolder: path.join(outputDir,'hashed'), slots: DEFAULT_SLOTS, cadence: 'daily', optionalSlot: false };
+  const defaults = { enabled: false, draftFolder: '', hashedFolder: path.join(outputDir,'hashed'), slots: ['20:00'], cadence: 'four-per-week', postsPerDay: 1, horizonDays: 14, optionalSlot: false };
   const settings = () => readJson(configPath, defaults);
   const repository = () => trackerRepository(trackerPath);
   const guard = async (action, { record = true } = {}) => {
@@ -76,6 +76,7 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
       const folder = await fs.realpath(input.draftFolder);
       if (!(await fs.stat(folder)).isDirectory()) throw Error('DRAFT_FOLDER_REQUIRED');
       config.draftFolder=folder;
+      config.hashedFolder=path.join(folder,'hashed');
     }
     if (!config.draftFolder && config.enabled) throw Error('SELECT_DRAFT_FOLDER');
     await fs.mkdir(outputDir,{recursive:true});
@@ -90,10 +91,10 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
   })));
   ipcMain.handle('engine:draft-reserve-preview',(_event,p)=>guard(async()=>{
     const snapshot=await syncCalendar(outputDir);
-    return planReservations({ ...p, rows:await readTracker(trackerPath), snapshot });
+    return planReservations({ ...p, cadence:'four-per-week', postsPerDay:1, rows:await readTracker(trackerPath), snapshot });
   }, {record:false}));
   ipcMain.handle('engine:draft-reserve',(_event,p)=>guard(()=>withPipelineLock(outputDir,async()=>{
-    const repo=await repository(),snapshot=await readJson(snapshotPath,{}),plan=planReservations({ ...p.plan, rows:await repo.read(),snapshot });
+    const repo=await repository(),snapshot=await readJson(snapshotPath,{}),plan=planReservations({ ...p.plan, cadence:'four-per-week', postsPerDay:1, rows:await repo.read(),snapshot });
     if(plan.fingerprint!==p.plan.fingerprint)throw Error('RESERVATION_PREVIEW_STALE');
     await repo.commit({updates:plan.updates});return plan;
   })));
