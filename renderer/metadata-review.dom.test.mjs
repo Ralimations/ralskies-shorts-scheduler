@@ -37,3 +37,24 @@ test('LM Studio stays idle until requested; address/port settings and review app
   window.document.querySelector('[data-llm-approve]').click();await settle();
   assert.equal(approved,1);assert.equal(row.public_title,'Already approved title');dom.window.close();
 });
+
+test('queue generation uses filenames without typed context and applies only on review',async()=>{
+ const dom=new JSDOM(html,{runScripts:'outside-only'}),{window}=dom;
+ const row={short_id:'NEW',batch_id:'INTAKE-NEW',status:'AWAITING_METADATA',original_filename:'Wait For Me - Hadestown - Broadway (1).mp4'};
+ let generated=0,approved=0;
+ const report={id:'batch',state:'REVIEW_REQUIRED',total:1,errors:[],entries:[{shortId:'NEW',filename:row.original_filename,suggestion:{missingFields:['public_title','description','youtube_tags'],candidates:[{title:'Could I sing in Hadestown?',description:'My Wait For Me cover.',tags:['Hadestown','cover']}]}}]};
+ window.ralskies={inventory:async()=>({files:[]}),calendar:async()=>({events:[]}),batches:async()=>({batches:[]}),titleReviewQueue:async()=>[],recoveryJournals:async()=>[],settings:async()=>({slots:['20:00']}),draftStatus:async()=>({settings:{enabled:false},rows:[row]}),
+ metadataQueueGenerate:async()=>{generated++;return report;},metadataQueueStatus:async()=>report,
+ metadataQueueApprove:async p=>{approved++;assert.equal(p.approved,true);assert.equal(p.selections[0].title,'Could I sing in Hadestown?');return {applied:1};}};
+ window.eval(views);window.eval(appSource);
+ const settle=()=>new Promise(resolve=>setTimeout(resolve,0));await settle();
+ window.document.querySelector('[data-view="drafts"]').click();
+ window.document.querySelector('[data-llm-suggest]').click();await settle();
+ assert.equal(window.document.querySelector('#lm-song').value,'Wait For Me - Hadestown - Broadway');
+ window.document.querySelector('[data-close-modal]').click();
+ window.document.querySelector('[data-llm-queue]').click();await settle();
+ assert.equal(generated,1);assert.equal(approved,0);
+ assert.equal(window.document.querySelector('[data-queue-title]').value,'Could I sing in Hadestown?');
+ window.document.querySelector('[data-llm-queue-apply]').click();await settle();
+ assert.equal(approved,1);dom.window.close();
+});

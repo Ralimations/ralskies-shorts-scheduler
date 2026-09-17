@@ -1,4 +1,4 @@
-const state={inventory:null,calendar:[],batches:null,batchDetail:null,selectedBatch:'BULK_03',titleQueue:[],recovery:[],view:'drafts',modal:null,busy:false,productionBusy:false,productionProgress:null};
+const state={inventory:null,calendar:[],batches:null,batchDetail:null,selectedBatch:'',titleQueue:[],recovery:[],view:'drafts',modal:null,busy:false,productionBusy:false,productionProgress:null};
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
 const clean=value=>String(value??'').trim();
@@ -6,7 +6,7 @@ const upper=value=>clean(value).toUpperCase();
 
 function counts(detail=state.batchDetail){
   const rows=detail?.readiness||[],total=rows.length;
-  return {total,linked:rows.filter(item=>clean(item.tracker?.youtube_video_id)).length,awaiting:rows.filter(item=>item.productionEligibility==='AWAITING_PRIVATE_UPLOAD').length,ready:rows.filter(item=>item.productionEligibility==='READY').length,scheduled:rows.filter(item=>['SCHEDULED','PUBLISHED','COMPLETE'].includes(upper(item.tracker?.status))).length,blocked:rows.filter(item=>item.productionEligibility==='BLOCKED').length};
+  return {total,retired:rows.filter(item=>upper(item.tracker?.status)==='RETIRED').length,linked:rows.filter(item=>clean(item.tracker?.youtube_video_id)).length,awaiting:rows.filter(item=>item.productionEligibility==='AWAITING_PRIVATE_UPLOAD').length,ready:rows.filter(item=>item.productionEligibility==='READY').length,scheduled:rows.filter(item=>['SCHEDULED','PUBLISHED','COMPLETE'].includes(upper(item.tracker?.status))).length,blocked:rows.filter(item=>item.productionEligibility==='BLOCKED').length};
 }
 function notify(message,type='success'){
   const root=$('#toast-root');if(!root)return;
@@ -38,10 +38,10 @@ function videos(){
   return `<section class="panel"><div class="section-title"><h2>Local video inventory</h2><span class="pill">${state.inventory?.files?.length||0} MP4 files</span></div><table><thead><tr><th>File</th><th>SHA-256</th><th>Size</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(row.name)}</td><td class="mono">${esc(row.hash)}</td><td>${(row.size/1048576).toFixed(1)} MB</td></tr>`).join('')}</tbody></table></section>`;
 }
 function completedBatch(batch){const c=counts(batch?.detail);return c.total>0&&c.scheduled===c.total;}
-function historyBatch(batch){return completedBatch(batch)||(state.settings?.archivedBatchIds||[]).includes(batch?.batchId);}
+function historyBatch(batch){const c=counts(batch?.detail);return completedBatch(batch)||(c.total>0&&c.retired+c.scheduled===c.total)||(state.settings?.archivedBatchIds||[]).includes(batch?.batchId);}
 function visibleBatches(){return (state.batches?.batches||[]).filter(batch=>state.showUploadHistory||!historyBatch(batch));}
 function batchTable(){
-  return visibleBatches().map(batch=>{const detail=batch.detail,c=counts(detail),selected=batch.batchId===state.selectedBatch;return `<tr class="${selected?'selected-row':''}"><td><strong>${esc(batch.batchId)}</strong></td><td>${esc(batch.startDate)} to ${esc(batch.endDate)}</td><td>${c.total||batch.itemCount||0}</td><td>${c.linked}</td><td>${c.scheduled}</td><td><button class="ghost" data-select-batch="${esc(batch.batchId)}">${selected?'Selected':'Select'}</button><button class="ghost" data-inspect-batch="${esc(batch.batchId)}">Inspect</button></td></tr>`;}).join('');
+  return visibleBatches().map(batch=>{const detail=batch.detail,c=counts(detail),selected=batch.batchId===state.selectedBatch;return `<tr class="${selected?'selected-row':''}"><td><strong>${esc(batch.batchId)}</strong></td><td>${esc(batch.startDate)} to ${esc(batch.endDate)}</td><td>${c.total||batch.itemCount||0}</td><td>${c.linked}</td><td>${c.scheduled}${c.retired?' / '+c.retired+' retired':''}</td><td><button class="ghost" data-select-batch="${esc(batch.batchId)}">${selected?'Selected':'Select'}</button><button class="ghost" data-inspect-batch="${esc(batch.batchId)}">Inspect</button></td></tr>`;}).join('');
 }
 function batches(){
   const visible=visibleBatches();
@@ -49,8 +49,8 @@ function batches(){
   const c=counts(),w=workflow();
   const historyCount=(state.batches?.batches||[]).filter(historyBatch).length;
   const historyToggle='<div class="button-row"><button class="ghost" data-toggle-upload-history aria-pressed="'+Boolean(state.showUploadHistory)+'">'+(state.showUploadHistory?'Hide upload history':'Show upload history')+' ('+historyCount+')</button></div>';
-  if(!visible.length)return '<section class="panel"><h2>No active batches</h2><p>Completed uploads are kept in history. Add new videos in Drafts to begin.</p>'+historyToggle+'</section>';
-  return `<section class="panel"><div class="section-title"><div><h2>${state.showUploadHistory?'Batches and upload history':'Active batches'}</h2><p class="subtle">The app uses the existing bulk folders and manifests. It does not restage them.</p></div><span class="pill">${esc(state.selectedBatch)}</span></div><table><thead><tr><th>Batch</th><th>Date range</th><th>Rows</th><th>YouTube IDs</th><th>Complete</th><th>Actions</th></tr></thead><tbody>${batchTable()}</tbody></table>${historyToggle}</section><section class="panel section"><div class="section-title"><h2>${esc(state.selectedBatch)} production flow</h2><span class="pill">NEXT: ${esc(w.title)}</span></div>${summaryCards()}<div class="button-row"><button class="ghost" data-bulk-meta-audit>Check Metadata</button><button class="primary" data-discover-private ${c.awaiting?'':'disabled'}>1. Find &amp; Match Private Videos</button><button class="ghost" data-metadata-review ${c.ready?'':'disabled'}>2. Review Metadata &amp; Schedule</button><button class="ghost" data-upload-review ${c.awaiting?'':'disabled'}>Upload Missing Videos via API</button></div><p class="subtle">Upload new files privately through the API, or upload hashed files manually and use Find &amp; Match Private Videos.</p></section><details class="panel section"><summary>Video queue and statuses</summary>${queue()}</details>`;
+  if(!visible.length)return '<section class="panel"><h2>No active batches</h2><p>Completed and retired batches are kept in history. Add new videos in Drafts to begin.</p>'+historyToggle+'</section>';
+  return `<section class="panel"><div class="section-title"><div><h2>${state.showUploadHistory?'Batches and upload history':'Active batches'}</h2><p class="subtle">The app uses the existing bulk folders and manifests. It does not restage them.</p></div><span class="pill">${esc(state.selectedBatch)}</span></div><table><thead><tr><th>Batch</th><th>Date range</th><th>Rows</th><th>YouTube IDs</th><th>Complete</th><th>Actions</th></tr></thead><tbody>${batchTable()}</tbody></table>${historyToggle}</section>${historyBatch(selectedBatchRecord())?'<section class="panel section"><h2>Batch history</h2><p>These records are historical. Retired videos are excluded from uploads and production. Check Calendar for any schedules still reported by YouTube.</p></section>':`<section class="panel section"><div class="section-title"><h2>${esc(state.selectedBatch)} production flow</h2><span class="pill">NEXT: ${esc(w.title)}</span></div>${summaryCards()}<div class="button-row"><button class="ghost" data-bulk-meta-audit>Check Metadata</button><button class="primary" data-discover-private ${c.awaiting?'':'disabled'}>1. Find &amp; Match Private Videos</button><button class="ghost" data-metadata-review ${c.ready?'':'disabled'}>2. Review Metadata &amp; Schedule</button><button class="ghost" data-upload-review ${c.awaiting?'':'disabled'}>Upload Missing Videos via API</button></div><p class="subtle">Upload new files privately through the API, or upload hashed files manually and use Find &amp; Match Private Videos.</p></section>`}<details class="panel section"><summary>Video queue and statuses</summary>${queue()}</details>`;
 }
 function queue(){
   const rows=state.batchDetail?.readiness||[];
@@ -161,6 +161,7 @@ document.addEventListener('click',async event=>{
     const historyPage=target.closest('[data-history-page]');if(historyPage){state.activityPage=Math.max(0,(state.activityPage||0)+Number(historyPage.dataset.historyPage));render();return;}
     if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-bulk-meta-'))){await window.BulkMetadata.action(target);return;}
     const nav=target.closest('nav button');if(nav){state.view=nav.dataset.view;if(state.view==='logs'&&window.ralskies.activityHistory)state.activity=await window.ralskies.activityHistory();render();return;}
+    if(target.closest('[data-creative-memory],[data-memory-disable]')){await metadataAction(target);return;}
     if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-llm-'))){await metadataAction(target);return;}
     if(target.closest('button')?.getAttributeNames().some(name=>name.startsWith('data-draft-')||name.startsWith('data-calendar-'))){await draftAction(target);return;}
     const select=target.closest('[data-select-batch]');if(select){await selectBatch(select.dataset.selectBatch);return;}
@@ -235,9 +236,10 @@ async function draftAction(target){
     if(videoId.includes('://')){const url=new URL(videoId);if(!['youtube.com','www.youtube.com','youtu.be','m.youtube.com'].includes(url.hostname))throw Error('Enter a YouTube URL');videoId=url.hostname==='youtu.be'?url.pathname.slice(1):url.searchParams.get('v')||url.pathname.split('/').at(-1);}
     await window.ralskies.draftLink({shortId:state.linkingDraft,videoId});state.modal=null;await refreshDrafts();notify('Existing private upload linked.');return true;
   }
+  if(target.closest('[data-calendar-history]')){state.showCalendarHistory=!state.showCalendarHistory;render();return true;}
   const mode=target.closest('[data-calendar-mode]');if(mode){state.calendarMode=mode.dataset.calendarMode;render();return true;}
   const calendarDay=target.closest('[data-calendar-day]');if(calendarDay){const rows=(state.calendar?.events||[]).filter(row=>row.pht?.startsWith(calendarDay.dataset.calendarDay));setModal(calendarDay.dataset.calendarDay+' / Manila',rows.map(row=>'<div class="callout"><strong>'+esc(row.pht)+' / '+esc(row.state)+'</strong><span>'+esc(row.title||row.shortId)+'</span></div>').join(''));return true;}
-  if(target.closest('[data-calendar-sync]')){state.calendar=await window.ralskies.calendarSync();render();notify('YouTube calendar synced.');return true;}
+  if(target.closest('[data-calendar-sync]')){try{state.calendar=await window.ralskies.calendarSync();render();notify('YouTube calendar synced.');}catch(error){state.calendar=await window.ralskies.calendar();render();throw error;}return true;}
   const month=target.closest('[data-calendar-month]');
   if(month){const current=state.calendarMonth||new Date(Date.now()+8*3600000).toISOString().slice(0,7),date=new Date(current+'-01T00:00:00Z');date.setUTCMonth(date.getUTCMonth()+Number(month.dataset.calendarMonth));state.calendarMonth=date.toISOString().slice(0,7);render();return true;}
   return false;
@@ -262,14 +264,59 @@ async function showLmSettings(){
 function showMetadataPrompt(shortId){
   const row=state.drafts?.rows?.find(item=>item.short_id===shortId);if(!row)throw Error('Draft not found');
   state.suggestDraftId=shortId;
-  const context=state.metadataContext||{};
-  setModal('Suggest missing metadata',`<p>${esc(row.original_filename||row.file_name)} · ${esc(shortId)}</p><p>Give Qwen the cover details and any useful clip notes. Suggestions stay separate until you review and save them.</p><label>Song name<input id="lm-song" value="${esc(row.source_song||context.song||'')}"></label><label>Original artist / fandom (optional)<input id="lm-artist" value="${esc(row.artist_or_fandom||context.artist||'')}"></label><label>Clip notes<textarea id="lm-notes" rows="3" maxlength="2000" placeholder="For example: the final chorus, soft opening, or dramatic high note"></textarea></label><label>Writing style (optional)<input id="lm-style" maxlength="500" value="${esc(context.style||'Concise, natural, and specific to this cover')}"></label><p>Song details and your notes are sent to your configured local LM Studio server.</p>`,'<button class="ghost" data-close-modal>Cancel</button><button class="ghost" data-llm-settings>Connection Settings</button><button class="primary" data-llm-generate>Generate Suggestions</button>');
+  const context=state.metadataContext?.shortId===shortId?state.metadataContext:{};
+  const filenameLabel=String(row.original_filename||row.file_name||'').split(/[\\/]/).pop().replace(/\.mp4$/i,'').replace(/(?:\s*\(\d+\)|-\d+)+$/g,'').replace(/\s+/g,' ').trim();
+  setModal('Suggest missing metadata',`<p>${esc(row.original_filename||row.file_name)} · ${esc(shortId)}</p><p>The original filename supplies the song/show/niche context automatically. You can generate immediately, or optionally correct the context below. Suggestions stay separate until you approve them.</p><label>File context (auto-filled; optional correction)<input id="lm-song" value="${esc(context.song||row.source_song||filenameLabel)}"></label><label>Original artist / fandom (optional)<input id="lm-artist" value="${esc(row.artist_or_fandom||context.artist||'')}"></label><label>Clip notes<textarea id="lm-notes" rows="3" maxlength="2000" placeholder="For example: the final chorus, soft opening, or dramatic high note"></textarea></label><label>Writing style (optional)<input id="lm-style" maxlength="500" value="${esc(context.style||'Concise, natural, and specific to this cover')}"></label><p>Song details and your notes are sent to your configured local LM Studio server.</p>`,'<button class="ghost" data-close-modal>Cancel</button><button class="ghost" data-llm-settings>Connection Settings</button><button class="primary" data-llm-generate>Generate Suggestions</button>');
 }
+function showCreativeMemory(){window.ralskies.creativeMemoryStatus().then(data=>{const rows=data.rows||[],stats=data.stats||{};setModal('Creative Memory','<p>'+stats.total+' records · '+stats.approved+' approved · '+stats.edited+' edited · '+stats.rejected+' rejected · '+stats.active+' active for RAG.</p>'+(rows.length?'<table><thead><tr><th>Decision</th><th>Song / source</th><th>Generated</th><th>Approved</th><th>Angle</th><th>RAG</th><th></th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+esc(row.decision)+'</td><td>'+esc(row.song)+' / '+esc(row.source)+'</td><td>'+esc(row.generated_title)+'</td><td>'+esc(row.approved_title||'—')+'</td><td>'+esc(row.angle_family||'')+'</td><td>'+esc(row.active_for_rag?'Active':'Disabled')+'</td><td>'+(row.active_for_rag?'<button class="ghost" data-memory-disable="'+esc(row.memory_id)+'">Disable</button>':'')+'</td></tr>').join('')+'</tbody></table>':'<p>No reviewed creative decisions yet.</p>'),'<button class="ghost" data-close-modal>Close</button>')}).catch(error=>notify(error.message,'error'));}
+function showMetadataReject(generationId,candidateIndex){setModal('Reject metadata suggestion','<p>This will keep the suggestion for history but exclude it from positive creative memory. A reason is optional.</p><label>Reason<select id="lm-reject-reason"><option value="">No reason</option><option>TOO_GENERIC</option><option>TOO_SEO</option><option>TOO_LONG</option><option>SOUNDS_LIKE_AI</option><option>INVENTED_CONTEXT</option><option>REPETITIVE</option><option>BAD_HASHTAGS</option><option>NOT_MY_VOICE</option><option>OTHER</option></select></label>','<button class="ghost" data-close-modal>Cancel</button><button class="primary" data-llm-reject-confirm data-reject-id="'+esc(generationId)+'" data-reject-index="'+candidateIndex+'">Reject</button>');}
 function showMetadataCandidates(){
   const suggestion=state.metadataSuggestion;
-  setModal('Review metadata suggestions',`<p>Model: ${esc(suggestion.model)}. Only missing metadata will be filled.</p><div class="metadata-candidates">${suggestion.candidates.map((candidate,index)=>`<article class="card"><h3>${esc(candidate.title)}</h3><p class="metadata-description">${esc(candidate.description)}</p><p class="subtle">Tags: ${esc(candidate.tags.join(', '))}</p><button class="primary" data-llm-pick="${index}">Review This Suggestion</button></article>`).join('')}</div>`);
+  setModal('Review metadata suggestions',`<p>Model: ${esc(suggestion.model)}. Only missing metadata will be filled.</p><div class="metadata-candidates">${suggestion.candidates.map((candidate,index)=>`<article class="card"><h3>${esc(candidate.title)}</h3><p class="metadata-description">${esc(candidate.description)}</p><p class="subtle">Tags: ${esc(candidate.tags.join(', '))}</p><button class="primary" data-llm-pick="${index}">Review This Suggestion</button><button class="ghost" data-llm-reject="${index}">Reject</button></article>`).join('')}</div>`);
 }
+
+function showMetadataQueueProgress(progress={}){
+  setModal('Generating queue metadata', '<p>Your local model is generating metadata from each original filename.</p><p>'+esc(progress.completed||0)+' ready; '+esc(progress.failed||0)+' failed'+(progress.total?' of '+esc(progress.total):'')+'.</p><p>'+esc(progress.current||'Starting…')+'</p><p>Progress is saved. Review the results before applying them.</p>', '<button class="ghost" data-close-modal>Close</button><button class="ghost" data-llm-queue-stop>Stop After Current Video</button>');
+}
+function showMetadataQueueReview(report){
+  state.metadataQueue=report;
+  if(!report){notify('No metadata batch has been generated yet.');return;}
+  if(report.state==='GENERATING'){showMetadataQueueProgress({total:report.total,completed:report.entries.length,failed:report.errors.length});return;}
+  const entries=report.entries||[];
+  setModal('Review draft queue metadata','<p>'+entries.length+' videos ready; '+(report.errors||[]).length+' failed; '+(report.pending||0)+' pending. Existing metadata is preserved. Titles must be unique; descriptions and tags may repeat.</p>'+entries.map(entry=>{
+    const candidates=entry.suggestion.candidates||[],defaultIndex=entry.suggestion.defaultCandidateIndex??0,candidate=candidates[defaultIndex]||candidates[0],row=state.drafts?.rows?.find(r=>r.short_id===entry.shortId)||{};
+    return '<article class="card"><h3>'+esc(entry.filename||entry.shortId)+'</h3><label>Default / alternate<select data-queue-choice="'+esc(entry.shortId)+'">'+candidates.map((item,index)=>'<option value="'+index+'" '+(index===defaultIndex?'selected':'')+'>'+esc(item.title)+'</option>').join('')+'</select></label><label>Title<input data-queue-title="'+esc(entry.shortId)+'" maxlength="60" value="'+esc(row.public_title||candidate.title)+'" '+(entry.suggestion.missingFields.includes('public_title')?'':'readonly')+'></label><details><summary>Description and tags</summary><p>'+esc(row.description||candidate.description)+'</p><p>'+esc(row.youtube_tags||candidate.tags.join(', '))+'</p></details></article>';
+  }).join('')+(report.errors||[]).map(e=>'<p class="subtle">'+esc(e.filename||e.shortId)+': '+esc(e.message)+'</p>').join(''),'<button class="ghost" data-close-modal>Close</button><button class="primary" data-llm-queue-apply '+(!entries.length||report.state==='APPROVED'?'disabled':'')+'>'+(report.state==='APPROVED'?'Applied':'Apply All '+entries.length)+'</button>');
+}
+document.addEventListener('change',event=>{const choice=event.target.closest('[data-queue-choice]');if(!choice||!state.metadataQueue)return;const entry=state.metadataQueue.entries?.find(item=>item.shortId===choice.dataset.queueChoice),candidate=entry?.suggestion?.candidates?.[Number(choice.value)];if(!candidate)return;const input=document.querySelector('[data-queue-title=\"'+choice.dataset.queueChoice+'\"]');if(input&&!input.readOnly)input.value=candidate.title;});
+if(typeof window.ralskies.onMetadataQueueProgress==='function')window.ralskies.onMetadataQueueProgress(progress=>{
+  if(state.modal?.title==='Generating queue metadata')showMetadataQueueProgress(progress);
+});
 async function metadataAction(target){
+  if(target.closest('[data-llm-queue-stop]')){await window.ralskies.metadataQueueStop();notify('Generation will stop after the current video.');return;}
+  if(target.closest('[data-llm-queue-review]')){showMetadataQueueReview(await window.ralskies.metadataQueueStatus());return;}
+  if(target.closest('[data-llm-queue]')){
+    if(state.llmBusy){notify('A metadata request is still running.');return;}
+    state.llmBusy=true;showMetadataQueueProgress();
+    try{showMetadataQueueReview(await window.ralskies.metadataQueueGenerate());}
+    finally{state.llmBusy=false;}
+    return;
+  }
+  if(target.closest('[data-llm-queue-apply]')){
+    if(state.llmBusy)return;
+    const selections=[...document.querySelectorAll('[data-queue-title]')].map(input=>{const shortId=input.dataset.queueTitle,choice=document.querySelector('[data-queue-choice=\"'+shortId+'\"]'),candidateIndex=Number(choice?.value||0),entry=state.metadataQueue.entries.find(item=>item.shortId===shortId),candidate=entry?.suggestion?.candidates?.[candidateIndex];return {shortId,candidateIndex,title:input.value===candidate?.title?undefined:input.value};});
+    state.llmBusy=true;
+    try{
+      const result=await window.ralskies.metadataQueueApprove({id:state.metadataQueue.id,selections,approved:true});
+      state.modal=null;await refreshDrafts();notify(result.applied+' drafts received metadata.');
+    }finally{state.llmBusy=false;}
+    return;
+  }
+
+  if(target.closest('[data-creative-memory]')){showCreativeMemory();return;}
+  if(target.closest('[data-memory-disable]')){await window.ralskies.creativeMemoryDisable({memoryId:target.closest('[data-memory-disable]').dataset.memoryDisable});showCreativeMemory();return;}
+  const reject=target.closest('[data-llm-reject]');if(reject){showMetadataReject(state.metadataSuggestion.id,Number(reject.dataset.llmReject));return;}
+  if(target.closest('[data-llm-reject-confirm]')){await window.ralskies.metadataReject({id:target.closest('[data-llm-reject-confirm]').dataset.rejectId,candidateIndex:Number(target.closest('[data-llm-reject-confirm]').dataset.rejectIndex),reason:$('#lm-reject-reason').value});state.modal=null;render();notify('Suggestion rejected and excluded from positive memory.');return;}
   if(target.closest('[data-llm-settings]')){await showLmSettings();return;}
   if(target.closest('[data-llm-test]')){
     const input=lmConnectionInput(),box=$('#lm-connection-status');box.textContent='Connecting to LM Studio…';
@@ -283,8 +330,8 @@ async function metadataAction(target){
   if(target.closest('[data-llm-generate]')){
     if(state.llmBusy){notify('A metadata request is still running.','info');return;}
     const context={song:$('#lm-song').value,artist:$('#lm-artist').value,clipNotes:$('#lm-notes').value,style:$('#lm-style').value};
-    if(!context.song.trim())throw Error('Enter the song name first.');
-    state.metadataContext=context;
+    // The backend also falls back to the original filename if this field is blank.
+    state.metadataContext={...context,shortId:state.suggestDraftId};
     const requestId=(state.metadataGeneration||0)+1;state.metadataGeneration=requestId;state.llmBusy=true;
     setModal('Generating metadata suggestions','<p>Your local model is writing suggestions. This may take several minutes, depending on your model and configured timeout.</p><p>No tracker metadata is changed by generation.</p>');
     try{

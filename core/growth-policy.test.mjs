@@ -52,3 +52,11 @@ test('8 PM default publishes at noon UTC and does not add a 10 PM slot',()=>{
  assert.doesNotThrow(()=>assertScheduleAvailable([row],row,{},now));
  assert.throws(()=>plan([draft('A','Cover')],{slots:['20:01']}),/PROTECTED/);
 });
+
+test('different songs in one niche rotate with other niches and do not fill consecutive slots alone',()=>{
+ const rows=[{...draft('A','For Forever'),original_filename:'For Forever Broadway.mp4'},{...draft('B','Wait For Me'),original_filename:'Wait For Me Broadway.mp4'},{...draft('C','Arabian Nights'),original_filename:'Arabian Nights Disney.mp4'}];
+ const result=plan(rows);assert.deepEqual(result.updates.map(r=>r.short_id),['A','C','B']);
+ assert.equal(plan(rows.slice(0,2)).updates.length,1);
+ const reserved={...rows[0],scheduled_date:'2030-01-09',scheduled_time:'20:00',schedule_policy:'four-per-week'};
+ assert.throws(()=>assertScheduleAvailable([reserved,{...rows[1],scheduled_date:'2030-01-07',scheduled_time:'20:00',schedule_policy:'four-per-week'}],{...rows[1],scheduled_date:'2030-01-07',scheduled_time:'20:00',schedule_policy:'four-per-week'},{},now),/TOPIC_ROTATION/);
+});

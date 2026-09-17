@@ -20,3 +20,18 @@ test('completed batches are hidden by default and can be opened in upload histor
  w.document.querySelector('[data-toggle-upload-history]').click();assert.equal(w.document.querySelector('[data-select-batch]').dataset.selectBatch,'BULK_DONE');
  w.document.querySelector('[data-toggle-upload-history]').click();assert.equal(w.document.querySelector('[data-select-batch]'),null);assert.match(w.document.querySelector('#view').textContent,/No active batches/);dom.window.close();
 });
+
+test('retired and mixed completed/retired batches are history with no production controls',async()=>{
+ const dom=new JSDOM(await fs.readFile(new URL('./index.html',import.meta.url),'utf8'),{runScripts:'outside-only'}),w=dom.window;
+ const batches=[{batchId:'BULK_RETIRED',detail:{readiness:[{tracker:{status:'RETIRED'},productionEligibility:'BLOCKED'}]}},{batchId:'BULK_MIXED',detail:{readiness:[{tracker:{status:'RETIRED'},productionEligibility:'BLOCKED'},{tracker:{status:'SCHEDULED'},productionEligibility:'BLOCKED'}]}}];
+ w.ralskies={calendar:async()=>({events:[]}),batches:async()=>({batches}),titleReviewQueue:async()=>[],recoveryJournals:async()=>[],settings:async()=>({}),draftStatus:async()=>({settings:{},rows:[]})};
+ w.eval((await Promise.all(['draft-views.js','app.js'].map(f=>fs.readFile(new URL(f,import.meta.url),'utf8')))).join('\n'));await new Promise(r=>setTimeout(r,0));
+ w.document.querySelector('[data-view="batches"]').click();
+ assert.match(w.document.querySelector('#view').textContent,/No active batches/);
+ assert.equal(w.document.querySelector('[data-select-batch]'),null);
+ w.document.querySelector('[data-toggle-upload-history]').click();
+ assert.equal(w.document.querySelectorAll('[data-select-batch]').length,2);
+ assert.equal(w.document.querySelector('[data-upload-review]'),null);
+ assert.equal(w.document.querySelector('[data-metadata-review]'),null);
+ assert.match(w.document.querySelector('#view').textContent,/historical/);dom.window.close();
+});

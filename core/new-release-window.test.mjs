@@ -24,11 +24,12 @@ test('weekly LLM receives creative evidence without schedules, paths, or video i
  assert.equal(result.text,'Try a song-specific title.');assert.doesNotMatch(payload.messages[1].content,/secret-id|secret-path|22:00/);
 });
 
-test('metadata IPC rejects an unreserved draft before contacting the LLM',async()=>{
+test('metadata IPC allows an unreserved draft to reach model configuration',async()=>{
  const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path'),{registerMetadataDesktop}=await import('./metadata-suggestions.mjs');
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'metadata-gate-')),handlers=new Map();
  registerMetadataDesktop({ipcMain:{handle:(key,fn)=>handlers.set(key,fn)},outputDir:dir,repository:{read:async()=>[{short_id:'NEW',batch_id:'INTAKE-NEW',status:'AWAITING_METADATA'}]}});
- await assert.rejects(handlers.get('engine:metadata-generate')(null,{shortId:'NEW',context:{song:'Test'}}),/INVALID_OR_PROTECTED_PUBLISH_TIME/);
+ await fs.writeFile(path.join(dir,'lm-studio-settings.json'),JSON.stringify({baseUrl:'http://127.0.0.1:1234/v1',model:'fixture',timeoutSeconds:1}));
+ await assert.rejects(handlers.get('engine:metadata-generate')(null,{shortId:'NEW',context:{song:'Test'}}),/LM_STUDIO_TIMEOUT_MUST_BE/);
 });
 
 test('native metadata generation disables reasoning and tools, and validates JSON before review',async()=>{

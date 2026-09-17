@@ -23,7 +23,7 @@ test('uses the configured local port and JSON schema; prompt contains creative f
   assert.equal(request.options.redirect,'error');assert.ok(request.options.signal);
   const prompt=JSON.stringify(payload.messages);
   for(const value of [original.file_hash,original.file_path,original.short_id,original.scheduled_date,original.related_video_id])assert.equal(prompt.includes(value),false);
-  assert.match(prompt,/Example Song/);assert.equal(suggestion.state,'REVIEW_REQUIRED');assert.deepEqual(original,before);
+  assert.match(prompt,/Example Song/);assert.equal(suggestion.state,'REVIEW_REQUIRED');assert.deepEqual(original,before);assert.ok(!suggestion.candidates[0].tags.some(tag=>['#fyp','#indie','#music'].includes(tag.toLowerCase())));
 });
 test('local address accepts custom ports and refuses remote destinations or embedded credentials',()=>{
   assert.equal(localEndpoint('http://localhost:4321'),'http://localhost:4321/v1');
@@ -74,4 +74,18 @@ test('generation timeout has a bounded configurable allowance for slower local m
   let calls=0;
   await assert.rejects(generateMetadataSuggestions({row:row(),context:{song:'Example Song'},model:'qwen',timeoutSeconds:0,fetchImpl:async()=>{calls++;}}),/TIMEOUT/);
   assert.equal(calls,0);
+});
+
+test('generated metadata encourages punchy wording and caps hashtag output',async()=>{
+  const longTitle=await generate(row(),async()=>completion({suggestions:[{title:'x'.repeat(61),description:'Short',tags:['#ArabianNights']}]}));assert.equal(longTitle.candidates[0].title.length,61);
+  const longerDescription=await generate(row(),async()=>completion({suggestions:[{title:'Arabian Nights please cast me',description:'x'.repeat(321),tags:['#ArabianNights']}]}));assert.equal(longerDescription.candidates[0].description.length,321);
+  const suggestion=await generate(row(),async()=>completion({suggestions:[{title:'Arabian Nights please cast me',description:'Can I be the prince?',tags:['#ArabianNights','#Disney','#MusicalTheatre','#ExtraOne','#ExtraTwo']}]}));assert.ok(suggestion.candidates[0].tags.length<=5);assert.ok(!suggestion.candidates[0].tags.includes('#fyp'));
+});
+
+test('RAG recent titles are excluded and unsupported invented character references are filtered',async()=>{
+  const result=await generateMetadataSuggestions({row:row(),context:{song:'Arabian Nights',source:'Aladdin',niche:'Musical Theatre'},ragContext:{recent_titles:['can i be the prince or what']},avoidTitles:['can i be the prince or what'],baseUrl:'http://127.0.0.1:4321/v1',model:'my-installed-qwen',fetchImpl:async()=>completion({suggestions:[
+    {title:'can i be the prince or what',description:'channel my inner jafar for this one.',tags:['#Aladdin','#Cover']},
+    {title:'Arabian Nights has no reason to be this fun',description:'A playful take on the song.',tags:['#ArabianNights','#Cover']}
+  ]})});
+  assert.equal(result.candidates.length,1);assert.equal(result.candidates[0].title,'Arabian Nights has no reason to be this fun');
 });

@@ -12,5 +12,8 @@
   "devDependencies": {
     "electron": "^32.0.0",
     "jsdom": "^30.0.1"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.2"
   }
 }

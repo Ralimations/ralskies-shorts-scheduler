@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
-import { contentKey, isRetired, growthReservations, assertGrowthAvailable } from './growth-policy.mjs';
+import { contentKey, topicKey, isRetired, growthReservations, assertGrowthAvailable } from './growth-policy.mjs';
 import { excelDate, clockTime, utcPublishAt } from './existing-batch-service.mjs';
 
 export const DEFAULT_SLOTS = ['20:00'];
 const clean = value => String(value ?? '').trim();
+const timestamp = value => typeof value === 'number' ? Date.UTC(1899,11,30) + value * 86400000 : Date.parse(value);
 export const isProtected = time => time > '20:00' && time <= '21:00';
 export function validateSlots(slots, optionalSlot = false) {
   if (!Array.isArray(slots) || !slots.length) throw Error('SELECT_AT_LEAST_ONE_SLOT');
@@ -24,15 +25,20 @@ export function calendarEvents(rows, snapshot = {}) {
   const represented = new Set(rows.filter(isRetired).map(row => clean(row.youtube_video_id)).filter(Boolean));
   for (const row of rows) {
     const status=clean(row.status).toUpperCase();
-    if(isRetired(row))continue;
+    if(isRetired(row)){
+      const video=remote.get(clean(row.youtube_video_id));
+      const fresh=Date.parse(snapshot.syncedAt)>timestamp(row.verification_timestamp);
+      if(fresh&&video?.status?.privacyStatus==='private'&&video.status.publishAt)events.push({shortId:row.short_id,batchId:row.batch_id,youtubeId:video.id,title:video.snippet?.title||row.public_title||row.short_id,contentKey:contentKey(row),topicKey:topicKey(row),at:video.status.publishAt,pht:pht(video.status.publishAt),state:'RETIRED_STILL_SCHEDULED',source:'YOUTUBE',isTracked:true,observedAt:snapshot.syncedAt});
+      continue;
+    }
     if(/DUPLICATE|UNRESOLVED/.test(status+' '+clean(row.duplicate_disposition).toUpperCase()))continue;
     const youtubeId=clean(row.youtube_video_id);
     if(youtubeId&&represented.has(youtubeId))continue;
     const complete=['PUBLISHED','SCHEDULED','COMPLETE'].includes(status);
-    const stale=complete&&Date.parse(row.verification_timestamp)>Date.parse(snapshot.syncedAt);
+    const stale=complete&&timestamp(row.verification_timestamp)>Date.parse(snapshot.syncedAt);
     const video=stale?null:remote.get(youtubeId),localAt=utcPublishAt(row);
     if(youtubeId)represented.add(youtubeId);
-    const base = { contentKey: contentKey(row), shortId: row.short_id, batchId: row.batch_id, youtubeId: clean(row.youtube_video_id), title: clean(row.public_title) || clean(row.original_filename) || clean(row.file_name) || row.short_id, trackerStatus: row.status, isTracked: true };
+    const base = { contentKey: contentKey(row), topicKey:topicKey(row), shortId: row.short_id, batchId: row.batch_id, youtubeId: clean(row.youtube_video_id), title: clean(row.public_title) || clean(row.original_filename) || clean(row.file_name) || row.short_id, trackerStatus: row.status, isTracked: true };
     if (video) {
       represented.add(video.id);
       const published = video.status?.privacyStatus === 'public';
@@ -41,6 +47,7 @@ export function calendarEvents(rows, snapshot = {}) {
       if (localAt && !complete && (!actualAt || Date.parse(actualAt) !== Date.parse(localAt))) events.push({ ...base, at: localAt, pht: pht(localAt), state: 'RESERVATION_CONFLICT', source: 'TRACKER' });
       if(!actualAt&&complete&&localAt)events.push({...base,at:localAt,pht:pht(localAt),state:'TRACKER_'+status,source:'TRACKER'});
     } else if (localAt) {
+      if(complete && snapshot.complete === true && !stale)continue;
       events.push({ ...base, at: localAt, pht: pht(localAt), state: complete ? 'TRACKER_' + clean(row.status).toUpperCase() : 'RESERVED', source: 'TRACKER' });
     }
   }

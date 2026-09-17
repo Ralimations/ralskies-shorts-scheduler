@@ -265,7 +265,7 @@ be nonempty, at most 100 characters including spaces and hashtags, and contain
 no angle brackets. Invalid titles appear as review blockers. Titles are checked
 again on the final API payload. No automatic truncation changes approved text.
 
-The local model is instructed to aim for 90 characters, use natural wording
+The local model is instructed to aim for roughly 40–60 characters when natural, use natural wording
 about the supplied song or cover moment, avoid unsupported claims and generic
 clickbait, and use at most two optional title hashtags. Extra hashtags belong
 in the description. Generated text must still pass validation and human review.
@@ -298,3 +298,19 @@ user-confirmed deletion, not an API verification. RETIRED rows are excluded from
 calendar reservations, private-upload eligibility, production reviews and stale
 execution plans. Unresolved and DUPLICATE rows were preserved. Never retry a retired
 upload automatically. No YouTube writes were performed during this change.
+
+Calendar and batch history: retired and completed batches are hidden from Active Batches. History is read-only. Calendar opens on upcoming posts; Show past posts reveals publication history. Fresh YouTube schedules for retired records are flagged as conflicts and still occupy dates. A failed sync preserves the previous snapshot with an explicit error; it does not confirm current remote state.
+
+Metadata generation does not require a calendar reservation or YouTube sync. After intake, use Generate Metadata, review and approve the suggestions, then reserve publication dates. Publication still requires validated scheduling and approved metadata.
+
+Draft metadata: original filenames automatically supply song/show/niche context. In Drafts, Generate All Metadata fills missing creative fields across editable drafts, then Apply All saves the reviewed suggestions in one tracker commit. Review Last Metadata Batch reopens saved progress; Stop After Current Video preserves completed suggestions. Approved metadata stays intact. Titles are checked against tracker titles and each other (case, punctuation and hashtag-only differences do not count); duplicate model results are flagged. Descriptions and tags may repeat. New growth reservations alternate recognized filename niches (Broadway, Disney, fandom, rock, pop), falling back to artist/song context; if no alternative is eligible, the slot remains empty. Song cooldown and four weekly 20:00 posts remain enforced.
+
+Generated titles use the RALSKIES VOICE: prefer titles around 60 characters while allowing shorter natural wording, avoid forced keyword front-loading, keep descriptions to one or two sentences, and retain three candidate options with the best-scoring option marked as the bulk default. Hashtags are capped at five meaningful song, show, fandom, or niche tags; generic #fyp, #viral, #trending, and #Ralskies are not added automatically.
+
+### Local creative memory (RAG)
+
+Metadata generation keeps a local SQLite creative memory at `outputs/ralskies-content-engine/creative-memory.sqlite`. Each generation stores its candidates and model/prompt versions; approvals, edits, and rejections append decision events. The same generation ID plus candidate index is idempotent, so retries do not duplicate history.
+
+Before a new generation, the engine retrieves a small structured set from approved active memories. Positive examples favor matching song/show/artist/niche context and manually edited approvals. Recent approved titles are supplied separately as do-not-repeat exclusions, and a small matching set of rejected candidates is supplied as patterns to avoid. Retrieval is deterministic and uses diversity across angle, source, title opening, and sentence shape. It does not use hashes as semantic similarity and it never schedules, uploads, deletes, or edits tracker rows.
+
+The Drafts queue has a **Creative Memory** inspection control. It shows counts and recent records, and lets you disable an individual memory from future retrieval without deleting its history. Rejecting a candidate keeps it for audit and adds it to the negative memory. Old, retired, duplicate, or unresolved tracker rows are not ingested automatically; only new local generation and explicit review actions create memory records.

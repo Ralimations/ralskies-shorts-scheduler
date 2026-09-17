@@ -21,9 +21,9 @@ test('desktop watcher, metadata form, stale reservation guard, calendar and stop
   const video=path.join(draftFolder,'Latest cover.mp4');await fs.writeFile(video,'isolated test media');const old=new Date(Date.now()-60000);await fs.utimes(video,old,old);
   productionBusy=true;await poll();await fs.access(video);productionBusy=false;
   await poll();assert.equal(notifications.length,1);assert.equal(notifications[0].added,1);await fs.access(video);
-  let status=await call('draft-status');const row=status.rows[0];assert.equal(row.status,'AWAITING_METADATA');assert.equal(status.settings.hashedFolder,path.join(draftFolder,'hashed'));assert.equal(row.current_path,path.join(draftFolder,'hashed',row.file_hash+'.mp4'));
+  let status=await call('draft-status');const row=status.rows.find(item=>item.original_path===video);assert.equal(row.status,'AWAITING_METADATA');assert.equal(status.settings.hashedFolder,path.join(draftFolder,'hashed'));assert.equal(row.current_path,path.join(draftFolder,'hashed',row.file_hash+'.mp4'));
   await call('draft-metadata',{shortId:row.short_id,metadata:{source_song:'Latest cover',content_type:'ORIGINAL'}});
-  const input={batchId:'INTAKE-ALL',startDate:'2027-09-13',slots:['17:30'],cadence:'four-per-week'};
+  const input={batchId:row.batch_id,startDate:'2027-09-13',slots:['17:30'],cadence:'four-per-week'};
   const preview=await call('draft-reserve-preview',input);
   const snapshot={syncedAt:'2027-09-01T00:00:00Z',videos:[{id:'manual',snippet:{title:'Manual'},status:{privacyStatus:'private',publishAt:'2027-09-13T09:30:00Z'}}]};
   await writeJson(path.join(outputDir,'youtube-calendar.json'),snapshot);
@@ -32,7 +32,7 @@ test('desktop watcher, metadata form, stale reservation guard, calendar and stop
   await call('draft-reserve',{plan:fresh});
   await call('draft-metadata',{shortId:row.short_id,metadata:{public_title:'Latest cover',description:'A new cover performance',youtube_tags:'cover,music',category:'Music'}});
   const calendar=await call('calendar');assert.ok(calendar.events.some(event=>event.shortId===row.short_id&&event.pht==='2027-09-15 17:30'&&event.state==='RESERVED'));
-  status=await call('draft-status');assert.equal(status.rows[0].status,'BATCH_READY');
+  status=await call('draft-status');assert.equal(status.rows.find(item=>item.short_id===row.short_id).status,'BATCH_READY');
   const disappeared=path.join(root,'drafts-disconnected');await fs.rename(draftFolder,disappeared);
   await call('draft-configure',{enabled:false});assert.equal((await call('draft-status')).settings.enabled,false);
   const finalRows=await readTracker(trackerPath);

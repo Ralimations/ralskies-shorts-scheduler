@@ -13,13 +13,26 @@ export function remoteMatchesHash(video, hash) {
   return /^[A-F0-9]{64}$/.test(expected) && [video?.snippet?.title, video?.fileDetails?.fileName].some(value => clean(value).replace(/\.mp4$/i,'').toUpperCase() === expected);
 }
 export async function syncChannelCalendar(outputDir) {
-  const config = await loadYouTubeConfig(), client = createYouTubeRealClient({ config }), channel = await client.channels.mine();
-  if (!channel || channel.id !== config.expectedChannelId || channel.snippet?.title !== config.expectedChannelTitle) throw Error('CHANNEL_MISMATCH');
-  const videos = await client.videos.listChannelUploads(channel.contentDetails?.relatedPlaylists?.uploads);
-  if (videos.some(video => video.snippet?.channelId !== channel.id)) throw Error('CALENDAR_CHANNEL_MISMATCH');
-  const snapshot = { channelId: channel.id, syncedAt: new Date().toISOString(), videos };
-  await writeJson(path.join(outputDir,'youtube-calendar.json'), snapshot);
-  return snapshot;
+  const statusPath=path.join(outputDir,'calendar-sync-status.json');
+  try {
+    const config = await loadYouTubeConfig(), client = createYouTubeRealClient({ config }), channel = await client.channels.mine();
+    if (!channel || channel.id !== config.expectedChannelId || channel.snippet?.title !== config.expectedChannelTitle) throw Error('CHANNEL_MISMATCH');
+    const videos = await client.videos.listChannelUploads(channel.contentDetails?.relatedPlaylists?.uploads);
+    if (videos.some(video => video.snippet?.channelId !== channel.id)) throw Error('CALENDAR_CHANNEL_MISMATCH');
+    const snapshot = { channelId: channel.id, syncedAt: new Date().toISOString(), complete:true, videos };
+    await writeJson(path.join(outputDir,'youtube-calendar.json'), snapshot);
+    await writeJson(statusPath,{attemptedAt:snapshot.syncedAt,error:null});
+    return snapshot;
+  } catch(error) {
+    const message=error.message==='fetch failed'?'Cannot reach YouTube. Check the connection and try Sync YouTube again.':error.message;
+    await writeJson(statusPath,{attemptedAt:new Date().toISOString(),error:message});
+    await recordException(outputDir,{code:'CALENDAR_SYNC_FAILED',message});
+    throw Error(message,{cause:error});
+  }
+}
+export async function loadCalendarModel(trackerPath,outputDir) {
+  const [rows,snapshot,syncStatus]=await Promise.all([readTracker(trackerPath),readJson(path.join(outputDir,'youtube-calendar.json'),{}),readJson(path.join(outputDir,'calendar-sync-status.json'),{})]);
+  return {events:calendarEvents(rows,snapshot),syncedAt:snapshot.syncedAt||null,syncStatus};
 }
 export async function loadAllBatches({ outputDir, trackerPath, transactionPath }) {
   const rows = await readTracker(trackerPath), transaction = await readJson(transactionPath, { state: 'COMPLETE', batches: [] });
@@ -67,7 +80,7 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
   }, { record: !dryRun });
   const status = async()=>{
     const log=await readJson(path.join(outputDir,'exceptions.json'),[]);
-    return { settings:await settings(), rows:(await readTracker(trackerPath)).filter(isIntake),busy,lastScan:await readJson(path.join(outputDir,'draft-last-scan.json'),null),exceptions:(Array.isArray(log)?log:log.exceptions||[]).filter(entry=>/^DRAFT_/.test(entry.code||'')&&!entry.resolved) };
+    return { settings:await settings(), rows:(await readTracker(trackerPath)).filter(isIntake),busy,lastScan:await readJson(path.join(outputDir,'draft-last-scan.json'),null),exceptions:(Array.isArray(log)?log:log.exceptions||[]).filter(entry=>/^DRAFT_/.test(entry.code||'')&&!entry.resolved&&(!entry.batchId||/^INTAKE-/.test(entry.batchId))) };
   };
   ipcMain.handle('engine:draft-status',status);
   ipcMain.handle('engine:draft-configure',(_event, input)=>guard(async()=>{
@@ -110,11 +123,11 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
     await repo.commit({updates:[{short_id:row.short_id,youtube_video_id:videoId,status:'PRIVATE_UPLOADED',verification_state:'VERIFIED_PRIVATE_LINK',verification_timestamp:new Date().toISOString()}]});
     await exportRelatedVideoActions({rows:await repo.read(),outputDir});return {shortId:row.short_id,videoId};
   })));
-  ipcMain.handle('engine:calendar',async()=>({ events:calendarEvents(await readTracker(trackerPath),await readJson(snapshotPath,{})), syncedAt:(await readJson(snapshotPath,{})).syncedAt||null }));
+  ipcMain.handle('engine:calendar',()=>loadCalendarModel(trackerPath,outputDir));
   ipcMain.handle('engine:calendar-sync',()=>guard(async()=>{
     const snapshot=await syncCalendar(outputDir);
-    return {events:calendarEvents(await readTracker(trackerPath),snapshot),syncedAt:snapshot.syncedAt};
-  }));
+    return {events:calendarEvents(await readTracker(trackerPath),snapshot),syncedAt:snapshot.syncedAt,syncStatus:await readJson(path.join(outputDir,'calendar-sync-status.json'),{})};
+  },{record:false}));
   // The watcher owns local intake only. Network writes retain the existing live-mode
   // and immutable-plan gates, and are never performed by scans or dry runs.
   const tick=async()=>{

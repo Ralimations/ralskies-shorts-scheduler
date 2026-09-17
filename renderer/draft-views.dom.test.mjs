@@ -10,6 +10,7 @@ test('draft view exposes missing metadata and preserves legacy batch navigation'
   assert.match(dom.window.document.body.textContent,/Needs title, description, tags, category/);
   assert.equal(dom.window.document.querySelectorAll('script').length,0);
   assert.equal(dom.window.document.querySelector('[data-draft-edit]').disabled,false);
+  assert.equal(dom.window.document.querySelector('[data-llm-suggest]').disabled,false);
   assert.equal(dom.window.document.querySelector('[data-select-batch]').dataset.selectBatch,'INTAKE-NEW');
   assert.match(dom.window.document.body.textContent,/Watching folder/);dom.window.close();
 });
@@ -30,4 +31,16 @@ test('calendar defaults to readable agenda and safely falls back from an invalid
  dom.window.document.querySelector('main').innerHTML=html;
  assert.ok(dom.window.document.querySelector('.calendar-agenda'));assert.equal(dom.window.document.querySelector('.calendar-grid'),null);
  assert.match(dom.window.document.querySelector('#calendar-month').value,/^\d{4}-\d{2}$/);dom.window.close();
+});
+
+test('calendar hides past posts by default, exposes history on demand, and flags live retirement conflicts',()=>{
+ const dom=new JSDOM('<body><main></main></body>',{runScripts:'outside-only'});dom.window.eval(source);
+ const calendar={events:[{pht:'2020-01-01 20:00',at:'2020-01-01T12:00:00Z',title:'Old published cover',state:'PUBLISHED'},{pht:'2099-01-02 20:00',at:'2099-01-02T12:00:00Z',title:'Still live on YouTube',state:'RETIRED_STILL_SCHEDULED',source:'YOUTUBE'}],syncedAt:'2026-09-16T13:14:22Z',syncStatus:{error:'Connection unavailable'}};
+ const state={calendarMonth:'2020-01',calendar,calendarMode:'month'};
+ const main=dom.window.document.querySelector('main'),esc=v=>String(v??'');
+ main.innerHTML=dom.window.DraftViews.calendar(state,esc);
+ assert.doesNotMatch(main.textContent,/Old published cover/);assert.match(main.textContent,/1 retired videos are still scheduled/);assert.match(main.textContent,/YouTube sync failed/);
+ main.innerHTML=dom.window.DraftViews.calendar({...state,showCalendarHistory:true},esc);
+ assert.match(main.textContent,/Old published cover/);assert.match(main.textContent,/Hide past posts/);
+ dom.window.close();
 });

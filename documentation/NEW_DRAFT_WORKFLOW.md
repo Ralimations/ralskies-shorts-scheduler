@@ -12,7 +12,7 @@ Restart the desktop app after this update.
 ## LM Studio
 
 Configured server: http://127.0.0.1:1234/v1
-Configured model: qwen/qwen3.5-9b
+Configured model: prism-ml/bonsai-27b
 Configured mode: LM Studio native, reasoning off, 300-second timeout.
 
 The older OpenAI-compatible structured generation request timed out. Native generation was tested successfully with synthetic facts and produced three validated suggestions. Both modes remain selectable in LM Studio Connection. Native mode requires a model supporting reasoning off. All suggestions require human review; the LLM does not hash, match, choose dates, upload, or update workflow statuses.
@@ -32,3 +32,4 @@ Reports include tracked, published videos; title/topic metrics reflect views ear
 References:
 - [YouTube Analytics channel reports and OAuth scope](https://developers.google.com/youtube/analytics/channel_reports)
 - [LM Studio native chat API](https://lmstudio.ai/docs/developer/rest/chat)
+

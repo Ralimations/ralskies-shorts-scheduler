@@ -17,3 +17,23 @@ test('unfinished drafts still expose real scheduling conflicts',()=>{
  const events=calendarEvents([{...row,status:'PRIVATE_UPLOADED'}],{videos:[{id:'video1',status:{privacyStatus:'private',publishAt:'2027-01-02T09:30:00Z'}}]});
  assert.equal(events.filter(e=>e.state==='RESERVATION_CONFLICT').length,1);
 });
+
+test('fresh YouTube schedules for retired rows remain visible as conflicts; stale snapshots cannot resurrect them',()=>{
+ const retired={...row,status:'RETIRED'};
+ const remote={id:'video1',snippet:{title:'Old cover'},status:{privacyStatus:'private',publishAt:'2027-01-01T09:30:00Z'}};
+ assert.deepEqual(calendarEvents([retired],{syncedAt:'2026-12-19T00:00:00Z',videos:[remote]}),[]);
+ const fresh=calendarEvents([retired],{syncedAt:'2026-12-21T00:00:00Z',videos:[remote]});
+ assert.equal(fresh.length,1);assert.equal(fresh[0].state,'RETIRED_STILL_SCHEDULED');
+});
+test('complete fresh snapshot does not invent a schedule for a missing YouTube video',()=>{
+ assert.deepEqual(calendarEvents([row],{complete:true,syncedAt:'2026-12-21T00:00:00Z',videos:[]}),[]);
+ assert.equal(calendarEvents([row],{syncedAt:'2026-12-21T00:00:00Z',videos:[]})[0].state,'TRACKER_SCHEDULED');
+});
+
+test('Excel numeric verification dates correctly distinguish fresh retirement conflicts from stale snapshots',()=>{
+ const verified=(Date.parse('2026-12-20T00:00:00Z')-Date.UTC(1899,11,30))/86400000;
+ const retired={...row,status:'RETIRED',verification_timestamp:verified};
+ const videos=[{id:'video1',status:{privacyStatus:'private',publishAt:'2027-01-01T09:30:00Z'}}];
+ assert.equal(calendarEvents([retired],{syncedAt:'2026-12-21T00:00:00Z',videos})[0].state,'RETIRED_STILL_SCHEDULED');
+ assert.deepEqual(calendarEvents([retired],{syncedAt:'2026-12-19T00:00:00Z',videos}),[]);
+});

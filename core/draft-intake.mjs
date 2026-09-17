@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {assertUniqueTitle} from './title-identity.mjs';
 import { readJson, writeJson, withPipelineLock, recordException } from './pipeline-store.mjs';
 import { openTracker, readTracker, backupTracker, saveTracker, updateTrackerRows, appendTrackerRows, ensureTrackerHeaders } from './tracker-service.mjs';
 
@@ -122,6 +123,7 @@ export async function saveDraftMetadata({ repository, shortId, metadata }) {
   if (fields.content_type && !['COVER','ORIGINAL'].includes(fields.content_type)) throw Error('INVALID_CONTENT_TYPE');
   if ((fields.public_title || '').length > 100 || (fields.description || '').length > 5000) throw Error('METADATA_TOO_LONG');
   if (fields.related_video_id && !/^[A-Za-z0-9_-]{11}$/.test(fields.related_video_id)) throw Error('INVALID_RELATED_VIDEO_ID');
+  if(clean(fields.public_title)&&fields.public_title!==matches[0].public_title)assertUniqueTitle(rows,shortId,fields.public_title);
   const row = { ...matches[0], ...fields }, missing = metadataMissing(row);
   const update = { short_id: shortId, ...fields, metadata_state: missing.length ? 'AWAITING_METADATA' : 'METADATA_READY', status: row.youtube_video_id ? 'PRIVATE_UPLOADED' : missing.length ? 'AWAITING_METADATA' : 'BATCH_READY' };
   if (matches[0].schedule_policy === 'four-per-week' && fields.source_song !== undefined && fields.source_song !== matches[0].source_song) Object.assign(update, { scheduled_date: '', scheduled_time: '', posting_slot: '', schedule_order: '', schedule_policy: '' });
