@@ -35,7 +35,7 @@ test('metadata IPC allows an unreserved draft to reach model configuration',asyn
 test('native metadata generation disables reasoning and tools, and validates JSON before review',async()=>{
  const {generateMetadataSuggestions}=await import('./metadata-suggestions.mjs');let request;
  const result=await generateMetadataSuggestions({row:{short_id:'NEW',batch_id:'INTAKE-NEW',status:'AWAITING_METADATA'},context:{song:'Example'},baseUrl:'http://localhost:1234/v1',model:'qwen',apiMode:'native',fetchImpl:async(url,options)=>{request=JSON.parse(options.body);assert.equal(url,'http://localhost:1234/api/v1/chat');return {ok:true,json:async()=>({output:[{type:'message',content:JSON.stringify({suggestions:[{title:'Example cover',description:'My cover of Example.',tags:['cover']}]})}]})};}});
- assert.equal(request.reasoning,'off');assert.equal(request.store,false);assert.deepEqual(request.integrations,[]);assert.equal(result.state,'REVIEW_REQUIRED');
+ assert.equal(request.reasoning,'off');assert.equal(request.store,false);assert.deepEqual(request.integrations,[]);assert.equal(result.state,'GENERATION_REVIEW_REQUIRED');
 });
 test('analytics transport requests only read-only reports with tracked video filters',async()=>{
  const {createYouTubeRealClient}=await import('./youtube-real-client.mjs');let seen;

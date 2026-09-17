@@ -174,10 +174,14 @@ continue to use their original tracker metadata and manifests.
    choosing another draft folder sets its new-copy destination to `<Drafts>/hashed`.
 4. New rows enter an `INTAKE-...` batch with `AWAITING_METADATA`. Their title,
    description, tags, and category are blank. Use **Metadata** to enter these
-   manually, or use the optional reviewed LM Studio suggestions described below.
-5. Open the batch and use **Upload Missing Videos via API**, or manually upload
-   the hashed files and finish saving them as **Private**. Metadata-free intake
-   rows are eligible for private upload, but cannot enter publication.
+   manually, or use **Batch for Week** to generate reviewed metadata for four or five unique topics. Copy-numbered variants such as `(1)`, `(2)`, and `(3)` are skipped when another topic is available.
+5. Approve the metadata queue to create verified working copies under
+   `<Drafts>/hashed/queued/<queue-id>/` and assign the selected rows a scoped
+   `INTAKE-WEEK-...` batch. The original Drafts files and original hashed intake
+   copies remain untouched. Open that scoped batch and use **Upload Missing
+   Videos via API**, or manually upload its queued hashed files and save them as
+   **Private**. Metadata-free intake rows are eligible for private upload, but
+   cannot enter publication.
 6. For manual uploads, use **Find & Match Private Videos**, or **Link Private
    Upload** on a draft row. Matching requires the complete hash in the original
    filename or temporary title and an unambiguous YouTube video ID. A YouTube
@@ -190,7 +194,7 @@ continue to use their original tracker metadata and manifests.
 8. Once metadata, a private upload, and a future reservation are present, use the
    batch's **Review Metadata & Schedule** flow. New intake publication checks
    freshly read YouTube processing status and slot conflicts before applying.
-   YouTube handles release after the schedule is confirmed.
+   YouTube handles release after the schedule is confirmed. Per-video edits in this review save locally and leave other rows unchanged. A manually entered schedule bypasses automated weekly, cooldown, and rotation limits while still checking future time validity, the protected window, and occupied slots.
 
 **The watcher performs local intake only.** API uploads and publication retain
 the existing explicit batch review, live-mode and configuration gates. No scans,
@@ -305,7 +309,7 @@ Metadata generation does not require a calendar reservation or YouTube sync. Aft
 
 Draft metadata: original filenames automatically supply song/show/niche context. In Drafts, Generate All Metadata fills missing creative fields across editable drafts, then Apply All saves the reviewed suggestions in one tracker commit. Review Last Metadata Batch reopens saved progress; Stop After Current Video preserves completed suggestions. Approved metadata stays intact. Titles are checked against tracker titles and each other (case, punctuation and hashtag-only differences do not count); duplicate model results are flagged. Descriptions and tags may repeat. New growth reservations alternate recognized filename niches (Broadway, Disney, fandom, rock, pop), falling back to artist/song context; if no alternative is eligible, the slot remains empty. Song cooldown and four weekly 20:00 posts remain enforced.
 
-Generated titles use the RALSKIES VOICE: prefer titles around 60 characters while allowing shorter natural wording, avoid forced keyword front-loading, keep descriptions to one or two sentences, and retain three candidate options with the best-scoring option marked as the bulk default. Hashtags are capped at five meaningful song, show, fandom, or niche tags; generic #fyp, #viral, #trending, and #Ralskies are not added automatically.
+Generated titles use the RALSKIES VOICE: prefer titles around 60 characters while allowing shorter natural wording, avoid forced keyword front-loading, keep descriptions to one or two sentences, and retain three candidate options with the best-scoring option marked as the bulk default. Generated hashtag fields use the universal set `#singing #fyp #singer` for consistent cross-platform posting. The core Bonsai prompt identifies cover rows as `singing cover snippet` performance clips and sends a clean content payload with approved style examples and recent titles to avoid. Original rows use `original song promotion`; file paths, hashes, schedules, IDs, and tracker bookkeeping are excluded from the model prompt.
 
 ### Local creative memory (RAG)
 
@@ -314,3 +318,9 @@ Metadata generation keeps a local SQLite creative memory at `outputs/ralskies-co
 Before a new generation, the engine retrieves a small structured set from approved active memories. Positive examples favor matching song/show/artist/niche context and manually edited approvals. Recent approved titles are supplied separately as do-not-repeat exclusions, and a small matching set of rejected candidates is supplied as patterns to avoid. Retrieval is deterministic and uses diversity across angle, source, title opening, and sentence shape. It does not use hashes as semantic similarity and it never schedules, uploads, deletes, or edits tracker rows.
 
 The Drafts queue has a **Creative Memory** inspection control. It shows counts and recent records, and lets you disable an individual memory from future retrieval without deleting its history. Rejecting a candidate keeps it for audit and adds it to the negative memory. Old, retired, duplicate, or unresolved tracker rows are not ingested automatically; only new local generation and explicit review actions create memory records.
+
+### Deterministic Bonsai guardrails
+
+Bonsai output is normalized before review, including fenced JSON, `hashtags` aliases, and packed hashtag strings. Every public title must explicitly signal singing or a cover; abstract titles and internal angle labels are rejected. `core/metadata-guardrails.mjs` validates grounded context, character and role references, unsupported performance or recording claims, personal-history claims, prompt leakage, generic hashtags, exact or near-duplicate titles, and the required `PERSONALITY`, `INTERACTION`, and `CONTEXT_DISCOVERY` angle families. Failed angle families receive up to two targeted repair requests; accepted candidates are retained. Exhausted repairs are stored with `GENERATION_REVIEW_REQUIRED`, and only candidates that pass validation can receive the default selection. Invalid or unapproved candidates are never positive creative memory.
+
+Draft metadata can be generated incrementally with **Batch for Week**. It processes a deterministic four- or five-draft subset and leaves all other eligible drafts queued for later weeks. Weekly selection collapses copy-numbered filename variants such as `(1)`, `(2)`, and `(3)` to one topic and skips later duplicates when another topic is available, so a batch does not fill with the same cover. **Generate All Metadata** remains available when the full eligible queue is intentionally desired. Weekly batch generation does not reserve dates, upload videos, or modify tracker metadata until review and approval.

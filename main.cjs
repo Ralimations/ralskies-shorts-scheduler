@@ -9,9 +9,9 @@ const SETTINGS = path.join(OUT, 'desktop_settings.json');
 const BATCH_TRANSACTION = path.join(OUT, 'bulk_preparation_transaction.json');
 const TRACKER = path.join(OUT, 'Ralskies_Upload_Tracker.xlsx');
 let draftDesktop, trackerMutationBusy=false;
-const mutatingHandlers=new Set(['engine:apply-private-upload','engine:confirm-matches','engine:finalize-recovery','engine:apply-production','engine:approve-title','engine:keep-title','engine:metadata-approve','engine:bulk-metadata-save']);
+const mutatingHandlers=new Set(['engine:apply-private-upload','engine:production-review-edit','engine:confirm-matches','engine:finalize-recovery','engine:apply-production','engine:approve-title','engine:keep-title','engine:metadata-approve','engine:bulk-metadata-save']);
 const registerHandler=ipcMain.handle.bind(ipcMain);
-const activityHandlers=new Set([...mutatingHandlers,'engine:save-settings','engine:draft-configure','engine:draft-scan','engine:draft-metadata','engine:draft-reserve','engine:draft-link','engine:calendar-sync','engine:metadata-settings-save','engine:metadata-generate','engine:analytics-sync','engine:analytics-review']);
+const activityHandlers=new Set([...mutatingHandlers,'engine:save-settings','engine:draft-configure','engine:draft-scan','engine:draft-metadata','engine:draft-reserve','engine:draft-link','engine:calendar-sync','engine:production-review-edit','engine:metadata-settings-save','engine:metadata-generate','engine:analytics-sync','engine:analytics-review']);
 ipcMain.handle=(name,handler)=>registerHandler(name,async(...args)=>{
  const log=async(state)=>{if(activityHandlers.has(name)){try{const {appendActivity}=await import('./core/activity-history.mjs');await appendActivity(OUT,{event:name.replace('engine:',''),state});}catch(error){console.error('Activity log write failed:',error.code||'unknown');}}};
  let acquired=false;
@@ -69,7 +69,11 @@ ipcMain.handle('engine:production-review',async(_e,batchId='BULK_03')=>{
   if(/^INTAKE-/.test(batchId)&&model.plan.operationCount){try{const {validateIntakeProduction}=await import('./core/draft-desktop.mjs');await validateIntakeProduction({rows:batch.trackerRows,plan:model.plan,outputDir:OUT});}catch(error){remoteBlockers.push({code:error.message});}}
   return {...model,blockedCount:model.blockedCount+remoteBlockers.length,remoteBlockers,rows:model.rows.map(row=>{const remote=remoteById.get(row.youtubeId);return {...row,currentYoutubeTitle:remote?.snippet?.title||row.currentYoutubeTitle,currentPrivacy:remote?.status?.privacyStatus||'',channelId:remote?.snippet?.channelId||''};}),batch:{batchId:batch.batchId,startDate:batch.startDate,endDate:batch.endDate,folderPath:batch.folderPath,manifestPath:batch.manifest.manifestPath}};
 });
-ipcMain.handle('engine:apply-production',async(event,p)=>{
+ipcMain.handle('engine:production-review-edit',async(_e,p)=>{
+  if(!p?.batchId||!/^INTAKE-/.test(String(p.batchId)))throw Error('REVIEW_BATCH_NOT_EDITABLE');
+  const {editIntakeReviewRow}=await import('./core/draft-desktop.mjs');
+  return editIntakeReviewRow({batchId:p.batchId,shortId:p.shortId,edits:p.edits||{},trackerPath:TRACKER,outputDir:OUT});
+});ipcMain.handle('engine:apply-production',async(event,p)=>{
   const {executeProductionRequest}=await import('./core/production-entry.mjs');
   const {readTracker,openTracker,backupTracker,updateTrackerRows,saveTracker}=await import('./core/tracker-service.mjs');
   const {hashExecutionPlan,assertExecutionPlanCurrent}=await import('./core/execution-plan.mjs');

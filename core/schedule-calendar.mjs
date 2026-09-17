@@ -109,10 +109,10 @@ export function planReservations({ rows, batchId, startDate, slots = DEFAULT_SLO
   const plan = { batchId, startDate, slots: times, cadence, optionalSlot, ...(windowStart?{windowStart,windowEnd,intervalMinutes}:{}), ...(postsPerDay!==undefined?{postsPerDay:dailyLimit}:{}), updates, snapshotAt: snapshot.syncedAt || null };
   return { ...plan, fingerprint: crypto.createHash('sha256').update(JSON.stringify(plan)).digest('hex') };
 }
-export function assertScheduleAvailable(rows, row, snapshot, now = Date.now()) {
+export function assertScheduleAvailable(rows, row, snapshot, now = Date.now(), { enforceGrowth = true } = {}) {
   const at = utcPublishAt(row), time = clockTime(row.scheduled_time);
   if (!at || Date.parse(at) <= now || isProtected(time)) throw Error('INVALID_OR_PROTECTED_PUBLISH_TIME:' + row.short_id);
   const conflicts = calendarEvents(rows.filter(item => item.short_id !== row.short_id), { ...snapshot, videos: (snapshot.videos || []).filter(video => video.id !== row.youtube_video_id) }).filter(event => event.pht === pht(at));
   if (conflicts.length) throw Error('SCHEDULE_SLOT_OCCUPIED:' + excelDate(row.scheduled_date) + ' ' + time);
-  if (row.schedule_policy === 'four-per-week') assertGrowthAvailable(calendarEvents(rows.filter(item => item.short_id !== row.short_id), { ...snapshot, videos: (snapshot.videos || []).filter(video => video.id !== row.youtube_video_id) }), row, at);
+  if (enforceGrowth && row.schedule_policy === 'four-per-week') assertGrowthAvailable(calendarEvents(rows.filter(item => item.short_id !== row.short_id), { ...snapshot, videos: (snapshot.videos || []).filter(video => video.id !== row.youtube_video_id) }), row, at);
 }

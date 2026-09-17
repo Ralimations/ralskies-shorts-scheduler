@@ -2,10 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readTracker } from './tracker-service.mjs';
 import { buildIntakeBatch, loadExistingBatch } from './existing-batch-service.mjs';
-import { trackerRepository, scanDrafts, validateDraftFolders, saveDraftMetadata, isIntake, editableDraft, exportRelatedVideoActions } from './draft-intake.mjs';
+import { trackerRepository, scanDrafts, validateDraftFolders, saveDraftMetadata, isIntake, editableDraft, metadataMissing, exportRelatedVideoActions } from './draft-intake.mjs';
 import { readJson, writeJson, recordException, withPipelineLock } from './pipeline-store.mjs';
 import { calendarEvents, planReservations, assertScheduleAvailable, DEFAULT_SLOTS } from './schedule-calendar.mjs';
 import { createYouTubeRealClient, loadYouTubeConfig } from './youtube-real-client.mjs';
+import { assertUniqueTitle } from './title-identity.mjs';
 
 const clean = value => String(value ?? '').trim();
 export function remoteMatchesHash(video, hash) {
@@ -149,7 +150,41 @@ export function registerDraftDesktop({ ipcMain, outputDir, trackerPath, isProduc
   return { stop:()=>stopTimer(timer), isBusy:()=>busy };
 }
 
-export async function discoverIntakeBatch({batchId,trackerPath,outputDir}) {
+export async function editIntakeReviewRow({batchId,shortId,trackerPath,outputDir,edits={},syncCalendar = syncChannelCalendar}) {
+  return withPipelineLock(outputDir, async()=>{
+    const repository=await trackerRepository(trackerPath), rows=await repository.read();
+    const row=rows.find(item=>clean(item.short_id)===clean(shortId));
+    if(!row||clean(row.batch_id)!==clean(batchId)||!editableDraft(row))throw Error('REVIEW_ROW_NOT_EDITABLE:'+clean(shortId));
+    if(!clean(row.youtube_video_id))throw Error('REVIEW_ROW_NOT_LINKED:'+clean(shortId));
+    const allowed=['public_title','description','youtube_tags','category','scheduled_date','scheduled_time'];
+    const fields=Object.fromEntries(allowed.filter(key=>Object.prototype.hasOwnProperty.call(edits,key)).map(key=>[key,String(edits[key]??'').trim()]));
+    if(Object.hasOwn(fields,'public_title')&&fields.public_title.length>100)throw Error('METADATA_TOO_LONG');
+    if(Object.hasOwn(fields,'description')&&fields.description.length>5000)throw Error('METADATA_TOO_LONG');
+    const merged={...row,...fields};
+    if(Object.hasOwn(fields,'public_title')&&clean(fields.public_title)&&fields.public_title!==clean(row.public_title))assertUniqueTitle(rows,row.short_id,fields.public_title);
+    const scheduleChanged=['scheduled_date','scheduled_time'].some(key=>Object.hasOwn(fields,key)&&clean(fields[key])!==clean(row[key]));
+    if(scheduleChanged){
+      const date=clean(merged.scheduled_date),time=clean(merged.scheduled_time);
+      if(Boolean(date)!==Boolean(time))throw Error('REVIEW_SCHEDULE_DATE_TIME_REQUIRED:'+clean(shortId));
+      if(date||time){
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error('INVALID_START_DATE');
+        if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))throw Error('INVALID_SLOT:'+time);
+        const snapshot=await syncCalendar(outputDir);
+        const candidate={...merged,schedule_policy:clean(row.schedule_policy)||'four-per-week',timezone:clean(row.timezone)||'Asia/Manila'};
+        assertScheduleAvailable(rows.map(item=>item.short_id===row.short_id?candidate:item),candidate,snapshot,Date.now(),{enforceGrowth:false});
+        fields.timezone=candidate.timezone;fields.posting_slot=time;fields.schedule_policy='manual-override';
+      } else {
+        fields.posting_slot='';fields.schedule_order='';
+      }
+    }
+    const finalRow={...row,...fields},missing=metadataMissing(finalRow);
+    const update={short_id:row.short_id,...fields,metadata_state:missing.length?'AWAITING_METADATA':'METADATA_READY',status:'PRIVATE_UPLOADED'};
+    await repository.commit({updates:[update],transactionId:'review-edit-'+crypto.randomUUID()});
+    await exportRelatedVideoActions({rows:await repository.read(),outputDir});
+    return {shortId:row.short_id,updated:Object.keys(fields),metadataState:update.metadata_state,status:update.status};
+  });
+}
+export async function discoverIntakeBatch({batchId,trackerPath,outputDir,syncCalendar = syncChannelCalendar}) {
   const {matchPrivateVideos,normalizeHashTitle}=await import('./youtube-matching.mjs');
   const rows=await readTracker(trackerPath),selected=rows.filter(row=>row.batch_id===batchId&&editableDraft(row)&&!row.youtube_video_id);
   const snapshot=await syncCalendar(outputDir);

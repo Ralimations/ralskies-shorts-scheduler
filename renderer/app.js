@@ -107,13 +107,18 @@ async function confirmMatches(){
 async function metadataReview(){
   notify(`Reading current YouTube state for ${state.selectedBatch}…`,'info');
   const model=await window.ralskies.productionReview(state.selectedBatch);state.productionReview=model;
-  const rows=model.rows.filter(row=>row.productionEligibility==='READY').map(row=>`<tr><td>${row.order}</td><td>${esc(row.shortId)}</td><td>${esc(row.song)}</td><td class="mono">${esc(row.youtubeId)}</td><td class="mono">${esc(row.currentYoutubeTitle)}</td><td>${esc(row.finalAuthoritativeTitle)}</td><td>${esc(row.schedulePht)}</td><td>${esc(row.publishAtUtc)}</td></tr>`).join('');
-  const blockers=[...(model.remoteBlockers||[]),...(model.exclusions||[]).filter(item=>String(item.reason).startsWith('BLOCKED'))];
-  const body=`<div class="grid"><div class="card">Linked: ${model.youtubeLinkedCount}</div><div class="card">Ready: ${model.readyCount}</div><div class="card">Writes: ${model.plannedOperationCount}</div><div class="card">Blockers: ${blockers.length}</div></div><div class="callout"><strong>Current YouTube values were read live.</strong><span>The hash title will be replaced by the final tracker title. Description, tags, category and publishAt will also be applied.</span></div>${blockers.length?`<div class="error-box">${blockers.map(item=>`${esc(item.shortId)}: ${esc(item.code||item.reason)}`).join('<br>')}</div>`:''}<table><thead><tr><th>#</th><th>Short</th><th>Song</th><th>YouTube ID</th><th>Current title</th><th>Final title</th><th>PHT</th><th>UTC</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const allRows=Array.isArray(model.rows)?model.rows:[];
+  const rows=allRows.map(row=>{
+    const missing=Array.isArray(row.missingMetadata)?row.missingMetadata.join(', '):'';
+    const issue=missing||(row.productionEligibility==='READY'?'Ready':row.productionEligibility||'');
+    return `<tr data-review-row="${esc(row.shortId)}"><td>${esc(row.order??'—')}</td><td>${esc(row.shortId)}<br><span class="mono">${esc(row.song)}</span></td><td class="mono">${esc(row.youtubeId)}</td><td><div class="mono">Current: ${esc(row.currentYoutubeTitle)}</div><div>Final: ${esc(row.finalAuthoritativeTitle)}</div><input data-review-field="public_title" maxlength="100" value="${esc(row.finalAuthoritativeTitle)}"></td><td><textarea data-review-field="description" rows="3" maxlength="5000">${esc(row.finalDescription||'')}</textarea></td><td><input data-review-field="youtube_tags" value="${esc(row.backendTags||'')}"><select data-review-field="category"><option value="Music" ${row.category==='Music'?'selected':''}>Music</option></select></td><td><input type="date" data-review-field="scheduled_date" value="${esc(row.scheduledDate||'')}"><input type="time" data-review-field="scheduled_time" value="${esc(row.scheduledTime||'')}"></td><td>${esc(row.publishAtUtc||'—')}</td><td>${esc(issue)}<br><button class="ghost" data-review-save-row="${esc(row.shortId)}">Save this video</button></td></tr>`;
+  }).join('');
+  const blockers=[...(model.remoteBlockers||[]),...(model.exclusions||[]).filter(item=>{const reason=String(item.reason||'');return reason&&!['ALREADY_SCHEDULED','COMPLETE'].includes(reason);})];
+  const issueText=blockers.length?`<div class="error-box">${blockers.map(item=>`${esc(item.shortId||'Batch')}: ${esc(item.code||item.reason||'Review required')}`).join('<br>')}</div>`:'';
+  const body=`<div class="grid"><div class="card">Linked: ${model.youtubeLinkedCount}</div><div class="card">Ready: ${model.readyCount}</div><div class="card">Writes: ${model.plannedOperationCount}</div><div class="card">Blockers: ${blockers.length}</div></div><div class="callout"><strong>Current YouTube values were read live. Edit individual videos here.</strong><span>Save changes locally to the tracker. Other videos and schedules stay unchanged. YouTube is modified only after final approval.</span></div>${issueText}<table><thead><tr><th>#</th><th>Short / Song</th><th>YouTube ID</th><th>Title</th><th>Description</th><th>Tags / Category</th><th>PHT schedule</th><th>UTC</th><th>State / action</th></tr></thead><tbody>${rows||'<tr><td colspan="9">No rows were returned for this batch.</td></tr>'}</tbody></table>`;
   const footer=`<button class="ghost" data-close-modal>Close</button><button class="primary" data-request-production ${model.plannedOperationCount&&blockers.length===0?'':'disabled'}>Continue to Final Approval</button>`;
   setModal(`${state.selectedBatch} · Metadata & Schedule Review`,body,footer);notify(blockers.length?`Review blocked by ${blockers.length} issue(s).`:`${model.plannedOperationCount} videos are ready for final approval.`,blockers.length?'error':'success');
-}
-function productionProgressBody(){
+}function productionProgressBody(){
   const progress=state.productionProgress||{},total=Number(progress.total||0),completed=progress.completedIds?.size||0,percent=total?Math.round(completed/total*100):0;
   const row=progress.currentShortId?`<div class="progress-current"><strong>${esc(progress.currentShortId)}</strong><span>${esc(progress.currentState||'STARTING')}</span></div>`:'<div class="progress-current"><strong>Preparing protected execution</strong><span>STARTING</span></div>';
   return `<div class="progress-box" role="status" aria-live="polite"><div class="progress-summary"><strong>${completed} of ${total} complete</strong><span>${percent}%</span></div><progress data-production-progress max="${total||1}" value="${completed}">${percent}%</progress>${row}<p>Each video is updated, read back, verified, and recorded before the next video starts.</p><p><strong>Do not click Apply again or close the app while this is running.</strong></p></div>`;
@@ -141,6 +146,17 @@ async function applyProduction(){
     setModal('Production execution complete',`<div class="success-box"><strong>${model.plannedOperationCount} operations completed.</strong><p>Each video was written, read back, verified, and then recorded in the tracker.</p></div>`);notify(`${model.batchId} metadata and schedules were applied successfully.`);
     try{await refresh();setModal('Production execution complete',`<div class="success-box"><strong>${model.plannedOperationCount} operations completed.</strong><p>Each video was written, read back, verified, and then recorded in the tracker.</p></div>`);}catch(refreshError){notify(`Execution completed, but screen refresh failed: ${refreshError?.message||refreshError}`,'error');}
   }catch(error){state.productionBusy=false;state.productionProgress=null;const code=error?.code||'PRODUCTION_EXECUTION_ERROR';setModal('Production stopped',`<div class="error-box"><strong>${esc(code)}</strong><p>${esc(error?.message||String(error))}</p><p>Do not retry until Logs / Recovery shows whether a remote write occurred.</p><p>${esc(window.ErrorGuidance?.describe(error?.message)||window.ErrorGuidance?.describe(code)||"")} </p></div>`);notify(`Production stopped: ${code}`,'error');}
+}
+async function saveReviewRow(shortId,button){
+  const row=[...document.querySelectorAll('[data-review-row]')].find(item=>item.dataset.reviewRow===shortId);
+  if(!row)return;
+  button.disabled=true;
+  const edits=Object.fromEntries(['public_title','description','youtube_tags','category','scheduled_date','scheduled_time'].map(key=>[key,row.querySelector(`[data-review-field="${key}"]`)?.value??'']));
+  try{
+    await window.ralskies.productionReviewEdit({batchId:state.selectedBatch,shortId,edits});
+    await metadataReview();
+    notify(`${shortId} saved. Other videos were not changed.`);
+  }catch(error){button.disabled=false;throw error;}
 }
 async function uploadReview(){
   const model=await window.ralskies.uploadReview(state.selectedBatch);state.uploadReview=model;
@@ -170,6 +186,7 @@ document.addEventListener('click',async event=>{
     if(target.closest('[data-continue-workflow]')){const step=workflow().number;if(step===1)await discoverPrivate();else if(step===2)await metadataReview();else notify(workflow().detail,'info');return;}
     if(target.closest('[data-discover-private]')){await discoverPrivate();return;}
     if(target.closest('[data-confirm-matches]')){await confirmMatches();return;}
+    const reviewSave=target.closest('[data-review-save-row]');if(reviewSave){await saveReviewRow(reviewSave.dataset.reviewSaveRow,reviewSave);return;}
     if(target.closest('[data-metadata-review]')){await metadataReview();return;}
     if(target.closest('[data-request-production]')){requestProduction();return;}
     if(target.closest('[data-confirm-production]')){await applyProduction();return;}
@@ -272,7 +289,7 @@ function showCreativeMemory(){window.ralskies.creativeMemoryStatus().then(data=>
 function showMetadataReject(generationId,candidateIndex){setModal('Reject metadata suggestion','<p>This will keep the suggestion for history but exclude it from positive creative memory. A reason is optional.</p><label>Reason<select id="lm-reject-reason"><option value="">No reason</option><option>TOO_GENERIC</option><option>TOO_SEO</option><option>TOO_LONG</option><option>SOUNDS_LIKE_AI</option><option>INVENTED_CONTEXT</option><option>REPETITIVE</option><option>BAD_HASHTAGS</option><option>NOT_MY_VOICE</option><option>OTHER</option></select></label>','<button class="ghost" data-close-modal>Cancel</button><button class="primary" data-llm-reject-confirm data-reject-id="'+esc(generationId)+'" data-reject-index="'+candidateIndex+'">Reject</button>');}
 function showMetadataCandidates(){
   const suggestion=state.metadataSuggestion;
-  setModal('Review metadata suggestions',`<p>Model: ${esc(suggestion.model)}. Only missing metadata will be filled.</p><div class="metadata-candidates">${suggestion.candidates.map((candidate,index)=>`<article class="card"><h3>${esc(candidate.title)}</h3><p class="metadata-description">${esc(candidate.description)}</p><p class="subtle">Tags: ${esc(candidate.tags.join(', '))}</p><button class="primary" data-llm-pick="${index}">Review This Suggestion</button><button class="ghost" data-llm-reject="${index}">Reject</button></article>`).join('')}</div>`);
+  const guardrailNotice=suggestion.state==='GENERATION_REVIEW_REQUIRED'?'<div class="warning-box"><strong>Generation needs review.</strong><p>'+esc((suggestion.validation?.errors||[]).map(item=>item.detail||item.code).slice(0,5).join(' · ')||'Some candidates did not pass deterministic checks.')+'</p></div>':'';setModal('Review metadata suggestions',guardrailNotice+`<p>Model: ${esc(suggestion.model)}. Only candidates that passed deterministic checks are shown. Only missing metadata will be filled.</p><div class="metadata-candidates">${suggestion.candidates.map((candidate,index)=>`<article class="card"><h3>${esc(candidate.title)}</h3><p class="metadata-description">${esc(candidate.description)}</p><p class="subtle">Tags: ${esc(candidate.tags.join(', '))}</p><button class="primary" data-llm-pick="${index}">Review This Suggestion</button><button class="ghost" data-llm-reject="${index}">Reject</button></article>`).join('')}</div>`);
 }
 
 function showMetadataQueueProgress(progress={}){
@@ -292,7 +309,10 @@ document.addEventListener('change',event=>{const choice=event.target.closest('[d
 if(typeof window.ralskies.onMetadataQueueProgress==='function')window.ralskies.onMetadataQueueProgress(progress=>{
   if(state.modal?.title==='Generating queue metadata')showMetadataQueueProgress(progress);
 });
+function showWeeklyBatchPrompt(){const eligible=(state.drafts?.rows||[]).filter(row=>['AWAITING_METADATA','BATCH_READY','PRIVATE_UPLOADED'].includes(row.status)&&['public_title','description','youtube_tags'].some(key=>!String(row[key]||'').trim())).length;setModal('Batch for Week','<p>Generate metadata for 4–5 shorts only. The remaining '+eligible+' eligible drafts stay in the queue for a later batch.</p><label>Shorts this week<select id="weekly-batch-limit"><option value="5">5 shorts</option><option value="4">4 shorts</option></select></label><p class="subtle">Selection follows the deterministic draft queue order. Nothing is scheduled or uploaded.</p>','<button class="ghost" data-close-modal>Cancel</button><button class="primary" data-llm-weekly-batch-run>Generate Weekly Batch</button>');}
 async function metadataAction(target){
+  if(target.closest('[data-llm-weekly-batch]')){showWeeklyBatchPrompt();return;}
+  if(target.closest('[data-llm-weekly-batch-run]')){if(state.llmBusy)return;state.llmBusy=true;const limit=Number($('#weekly-batch-limit')?.value||5);showMetadataQueueProgress({total:limit,completed:0,failed:0,current:'Starting weekly batch…'});try{showMetadataQueueReview(await window.ralskies.metadataQueueGenerate({limit}));}finally{state.llmBusy=false;}return;}
   if(target.closest('[data-llm-queue-stop]')){await window.ralskies.metadataQueueStop();notify('Generation will stop after the current video.');return;}
   if(target.closest('[data-llm-queue-review]')){showMetadataQueueReview(await window.ralskies.metadataQueueStatus());return;}
   if(target.closest('[data-llm-queue]')){
@@ -308,7 +328,7 @@ async function metadataAction(target){
     state.llmBusy=true;
     try{
       const result=await window.ralskies.metadataQueueApprove({id:state.metadataQueue.id,selections,approved:true});
-      state.modal=null;await refreshDrafts();notify(result.applied+' drafts received metadata.');
+      state.modal=null;await refreshDrafts();notify(result.stagedBatchId?result.applied+' drafts received metadata and were copied to the weekly queued batch. Select '+result.stagedBatchId+' in Batches for private upload.':result.applied+' drafts received metadata.');
     }finally{state.llmBusy=false;}
     return;
   }
